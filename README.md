@@ -41,15 +41,16 @@ STEW is intentionally strict.
 
 ## The Five Actors
 
-| Tool | What it owns | What it does *not* do |
+| Tool | Status | What it owns |
 |---|---|---|
-| **CLEO** | Task identity, focus, continuity | Planning, execution |
-| **GSD (Get Shit Done)** | Plans, phases, execution order | Task focus, automation decisions |
-| **ECC** | Review agents (code, security, refactor, docs) | Execution |
-| **RALPH** | Bounded mechanical automation | Scope definition, intent |
-| **STEW** | Routing & governance | Decisions, execution |
+| **Planning Contract** | **REQUIRED** | STATE.md + .continue-here.md |
+| **GSD (Get Shit Done)** | Required | Plans, phases, execution order |
+| **ECC** | Optional | Review agents (code, security, refactor, docs) |
+| **RALPH** | Optional | Bounded mechanical automation |
+| **CLEO** | **Optional** | Task identity (if configured) |
+| **STEW** | Required | Routing & governance |
 
-STEW does not replace these tools. It coordinates them.
+The planning contract is the only hard gate. CLEO is optional.
 
 ---
 
@@ -73,7 +74,7 @@ This turns expensive, repeated reasoning into cheap, persistent state.
 ```
 User
   ↓
-CLEO (focus: what task is active)
+Planning Contract (focus: .continue-here.md)
   ↓
 GSD (plans: what should happen)
   ↓
@@ -81,6 +82,8 @@ h:route (reads everything)
   ├─ recommends gsd:* commands
   ├─ may suggest h:ralph-* (only if allowed)
   └─ may suggest h:ecc-* (only if useful)
+
+Optional: CLEO (task tracking)
 ```
 
 ---

@@ -68,15 +68,16 @@ This design is intentional and non-negotiable.
 
 ## Tool Responsibilities (Quick Reference)
 
-| Tool | Why it is required | When it is used |
+| Tool | Status | When it is used |
 |----|----|----|
-| **CLEO** | Task focus & continuity | Always |
-| **GSD** | Planning & execution | Always |
-| **ECC** | Review agents | When suggested |
-| **RALPH** | Automation | Only when allowed |
-| **STEW** | Routing & governance | Always |
+| **Planning Contract** | **REQUIRED** | Always (STATE.md + .continue-here.md) |
+| **GSD** | Required | Planning & execution |
+| **ECC** | Optional | Review agents (when suggested) |
+| **RALPH** | Optional | Automation (only when allowed) |
+| **CLEO** | **Optional** | Task tracking (if configured) |
+| **STEW** | Required | Routing & governance |
 
-If any tool is missing, STEW will block routing.
+The planning contract is the **only hard gate** for routing. CLEO is optional.
 
 ---
 
@@ -199,6 +200,45 @@ The harness commands (`h:status`, `h:focus`, `h:route`) handle this automaticall
 
 ---
 
+## Planning Contract (REQUIRED)
+
+Every STEW-governed project **must** have a planning contract. This is the only hard requirement.
+
+### Required Files
+
+- `.planning/STATE.md` - Current work pointer and status
+- `.planning/.continue-here.md` - Resume pointer for sessions
+
+### Minimal Templates
+
+**Template: .planning/STATE.md**
+```
+Current Work:
+  Pointer: <path to current plan doc or phase directory>
+  Status: <one-line status>
+
+Next Action:
+  <one-line next step>
+```
+
+**Template: .planning/.continue-here.md**
+```
+Current pointer: <path to plan doc to resume>
+Why: <one-line context>
+Next action: <one-line next step>
+```
+
+### Optional Files
+
+These files enhance governance but are not required for routing:
+- `.planning/AI-OPS.md` - Operational constraints
+- `.planning/ROADMAP.md` - Project roadmap
+- `.planning/HARNESS_STATE.json` - Classification cache
+
+See GREENFIELD.md or BROWNFIELD.md for setup instructions.
+
+---
+
 ## Installing STEW Into a Project
 
 Once native tools are verified, install STEW into a project.
@@ -227,22 +267,32 @@ h:status
 ```
 
 A successful install shows:
-- STEW commands available
-- CLEO status (configured, not configured, focused, or no focus)
+- Planning Contract: OK (required)
+- Planning Focus: current pointer from .continue-here.md
+- CLEO (optional): status if configured
 - Missing prerequisites clearly reported
 
-**Expected CLEO statuses:**
+**If planning contract is missing:**
+
+```
+=== HARNESS STATUS - BLOCKED ===
+
+Missing required planning contract:
+ .planning/STATE.md
+ .planning/.continue-here.md
+
+Create them using the templates above, then rerun h:status.
+```
+
+**CLEO statuses (optional):**
 
 | Status | Meaning |
 |--------|---------|
-| `T### - Task Title` | CLEO configured and focused — ready to work |
+| `T### - Task Title` | CLEO configured and focused |
 | `None - no focused task` | CLEO configured but no focus set |
-| `Not configured` | `CLEO_PROJECT_DIR` not set |
-| `Project state not initialized` | `CLEO_PROJECT_DIR` set but not initialized |
+| `Not configured` | `CLEO_PROJECT_DIR` not set (OK - CLEO is optional) |
 
-If CLEO shows "Not configured", set `CLEO_PROJECT_DIR` to your external CLEO state directory.
-
-If `h:status` blocks, read the error message carefully. It is explicit by design.
+If `h:status` blocks on planning contract, create the required files first.
 
 ---
 

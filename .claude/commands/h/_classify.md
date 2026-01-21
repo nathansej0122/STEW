@@ -8,26 +8,30 @@ allowed-tools: Bash
 
 **Not user-callable. Called by h:route only.**
 
-**CLEO project state is EXTERNAL to repos.** All CLEO commands must run from `$CLEO_PROJECT_DIR`.
+**Planning contract is REQUIRED. CLEO is OPTIONAL.**
 
-## CLEO Invocation Setup
+Classification is stored in `.planning/HARNESS_STATE.json`.
 
-Before running CLEO commands, resolve the binary and validate the environment:
+## Gate 0: Planning Contract (REQUIRED)
 
 ```bash
-# Resolve CLEO binary
-if [ -n "${CLEO_BIN:-}" ]; then
-  CLEO_CMD="$CLEO_BIN"
-elif command -v cleo >/dev/null 2>&1; then
-  CLEO_CMD="cleo"
-else
-  echo "CLEO_BINARY_NOT_FOUND"
-  exit 1
+MISSING=""
+if [ ! -f ".planning/STATE.md" ]; then
+  MISSING="$MISSING .planning/STATE.md"
+fi
+if [ ! -f ".planning/.continue-here.md" ]; then
+  MISSING="$MISSING .planning/.continue-here.md"
 fi
 
-# All CLEO commands must run from CLEO_PROJECT_DIR
-# Example: (cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show)
+if [ -n "$MISSING" ]; then
+  echo "PLANNING_CONTRACT_MISSING:$MISSING"
+  exit 1
+else
+  echo "PLANNING_CONTRACT_OK"
+fi
 ```
+
+If blocked, do not proceed.
 
 ## Execution
 
@@ -36,73 +40,74 @@ Run these Bash tool calls in sequence:
 ### Step 1: Determine phase directory and plan file
 
 ```bash
-PHASE_DIR=$(grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
+# Try to extract phase from STATE.md
+PHASE_DIR=$(grep -oP '(Phase Directory:|Current Phase:|Pointer:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
+
+# If no phase dir, try current pointer
+if [ -z "$PHASE_DIR" ] || [ ! -d "$PHASE_DIR" ]; then
+    CURRENT_POINTER=$(grep -E "^Current pointer:" .planning/.continue-here.md 2>/dev/null | sed 's/Current pointer: *//')
+    PHASE_DIR=$(dirname "$CURRENT_POINTER" 2>/dev/null)
+fi
+
 if [ -z "$PHASE_DIR" ]; then echo "NO_PHASE"; exit 0; fi
+
 PLAN_FILE=$(ls "$PHASE_DIR"/*-PLAN.md "$PHASE_DIR"/PLAN.md 2>/dev/null | sort | head -1)
 if [ -z "$PLAN_FILE" ]; then echo "NO_PLAN"; exit 0; fi
 echo "PHASE_DIR=$PHASE_DIR"
 echo "PLAN_FILE=$PLAN_FILE"
 ```
 
-### Step 2: Get focused task ID
-
-```bash
-# Run CLEO from external project state directory
-FOCUS_ID=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show -q 2>/dev/null)
-if [ -z "$FOCUS_ID" ]; then echo "NO_FOCUS"; exit 0; fi
-echo "FOCUS_ID=$FOCUS_ID"
-```
-
-### Step 3: Compute plan hash
+### Step 2: Compute plan hash
 
 ```bash
 PLAN_HASH=$(sha256sum "$PLAN_FILE" | cut -d' ' -f1)
 echo "PLAN_HASH=$PLAN_HASH"
 ```
 
-### Step 4: Check for existing classification
+### Step 3: Check for existing classification in HARNESS_STATE.json
 
 ```bash
-# Run CLEO from external project state directory
-FOCUS_ID=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show -q 2>/dev/null)
-TASK_OUTPUT=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" show "$FOCUS_ID" 2>/dev/null)
+if [ -f ".planning/HARNESS_STATE.json" ]; then
+    python3 << 'PYEOF'
+import json
+import sys
 
-# Extract base64-encoded classification and decode (last entry wins)
-EXISTING_JSON=$(echo "$TASK_OUTPUT" | python3 -c "
-import sys, re, json, base64
-text = sys.stdin.read()
-matches = re.findall(r'\[WORK_CLASSIFICATION_B64\]\s*([A-Za-z0-9+/=]+)', text)
-if matches:
-    candidate = matches[-1]  # last entry wins
-    try:
-        decoded = base64.b64decode(candidate).decode('utf-8')
-        obj = json.loads(decoded)
-        print(json.dumps(obj))
-    except:
-        pass
-" 2>/dev/null)
+try:
+    with open('.planning/HARNESS_STATE.json', 'r') as f:
+        state = json.load(f)
 
-if [ -n "$EXISTING_JSON" ]; then
-    EXISTING_HASH=$(echo "$EXISTING_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('plan_hash',''))" 2>/dev/null)
-    PLAN_FILE=$(grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
-    PLAN_FILE=$(ls "$PLAN_FILE"/*-PLAN.md "$PLAN_FILE"/PLAN.md 2>/dev/null | sort | head -1)
-    CURRENT_HASH=$(sha256sum "$PLAN_FILE" | cut -d' ' -f1)
-    if [ "$EXISTING_HASH" = "$CURRENT_HASH" ]; then
-        echo "CLASSIFICATION_CACHED"
-        exit 0
-    fi
+    classification = state.get('classification', {})
+    existing_hash = classification.get('plan_hash', '')
+
+    # Read current plan hash
+    import subprocess
+    result = subprocess.run(['sha256sum', state.get('classification', {}).get('plan_file', '')],
+                          capture_output=True, text=True)
+    # This will be compared externally
+
+    if existing_hash:
+        print(f"EXISTING_HASH={existing_hash}")
+    else:
+        print("NO_CACHED_CLASSIFICATION")
+except:
+    print("NO_CACHED_CLASSIFICATION")
+PYEOF
+else
+    echo "NO_CACHED_CLASSIFICATION"
 fi
-echo "NO_CACHED_CLASSIFICATION"
+
+# Compare hashes
+if [ "$EXISTING_HASH" = "$PLAN_HASH" ]; then
+    echo "CLASSIFICATION_CACHED"
+    exit 0
+fi
 ```
 
 If output is `CLASSIFICATION_CACHED`, stop here.
 
-### Step 5: Parse explicit automation block from plan
+### Step 4: Parse explicit automation block from plan
 
 ```bash
-PLAN_FILE=$(grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
-PLAN_FILE=$(ls "$PLAN_FILE"/*-PLAN.md "$PLAN_FILE"/PLAN.md 2>/dev/null | sort | head -1)
-
 # Extract automation block and parse with python
 AUTOMATION_BLOCK=$(sed -n '/^automation:/,/^[^ ]/p' "$PLAN_FILE" 2>/dev/null | head -5)
 
@@ -139,14 +144,11 @@ else:
 PYEOF
 ```
 
-### Step 6: Apply fallback heuristics (only if no valid explicit block)
+### Step 5: Apply fallback heuristics (only if no valid explicit block)
 
-If Step 5 output contains `NO_EXPLICIT_BLOCK` or `EXPLICIT_BLOCK_INVALID`, run:
+If Step 4 output contains `NO_EXPLICIT_BLOCK` or `EXPLICIT_BLOCK_INVALID`, run:
 
 ```bash
-PLAN_FILE=$(grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
-PLAN_FILE=$(ls "$PLAN_FILE"/*-PLAN.md "$PLAN_FILE"/PLAN.md 2>/dev/null | sort | head -1)
-
 PLAN_CONTENT=$(cat "$PLAN_FILE" 2>/dev/null)
 
 python3 << 'PYEOF'
@@ -155,7 +157,6 @@ import re
 content = """$PLAN_CONTENT"""
 
 # Gate 0: Validation-only → forbidden
-# Detects plans that only verify/check/inspect without modifying files
 validation_keywords = r'\b(verify|validate|check|confirm|ensure|assert|inspect|route|status)\b'
 shell_read_actions = r'\b(ls|cat|grep|jq|stat|sha256sum|head|tail|wc|diff|file)\b'
 mechanical_edit_signals = r'\b(rename|move|update|modify|edit|write|create|delete|remove|refactor)\b'
@@ -163,13 +164,11 @@ mechanical_edit_signals = r'\b(rename|move|update|modify|edit|write|create|delet
 has_validation_signals = bool(re.search(validation_keywords, content, re.I)) or bool(re.search(shell_read_actions, content))
 has_mechanical_signals = bool(re.search(mechanical_edit_signals, content, re.I))
 
-# Check if files_modified in frontmatter is empty or only planning docs
 files_modified_match = re.search(r'files_modified:\s*\[([^\]]*)\]', content)
 files_modified_empty = True
 if files_modified_match:
     files_list = files_modified_match.group(1).strip()
     if files_list:
-        # Check if only planning docs (.planning/, STATE.md, etc.)
         non_planning_files = [f for f in files_list.split(',') if '.planning' not in f and 'STATE.md' not in f and 'PLAN' not in f]
         files_modified_empty = len(non_planning_files) == 0
 
@@ -216,7 +215,6 @@ if has_allowed_paths and has_excluded_paths:
     exit()
 
 # Gate 4: Default → discouraged
-# Determine ECC based on content
 security_keywords = r'\b(security|auth|password|credential|token|encrypt|secret)\b'
 if re.search(security_keywords, content, re.I):
     ecc = "suggested"
@@ -231,9 +229,9 @@ print("SOURCE=inferred")
 PYEOF
 ```
 
-### Step 7: Build and persist classification JSON
+### Step 6: Build and persist classification to HARNESS_STATE.json
 
-Using the values from Step 5 (explicit) or Step 6 (inferred), run:
+Using the values from Step 4 (explicit) or Step 5 (inferred), run:
 
 ```bash
 # Collect values (replace with actual values from previous steps)
@@ -242,28 +240,45 @@ SCOPE="${EXPLICIT_SCOPE:-$INFERRED_SCOPE}"
 RALPH="${EXPLICIT_RALPH:-$INFERRED_RALPH}"
 ECC="${EXPLICIT_ECC:-$INFERRED_ECC}"
 SOURCE="${SOURCE}"
-
-# Run CLEO from external project state directory
-FOCUS_ID=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show -q 2>/dev/null)
-PLAN_FILE=$(grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
-PLAN_FILE=$(ls "$PLAN_FILE"/*-PLAN.md "$PLAN_FILE"/PLAN.md 2>/dev/null | sort | head -1)
-PLAN_HASH=$(sha256sum "$PLAN_FILE" | cut -d' ' -f1)
 DECIDED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-# Build JSON (single line)
-CLASSIFICATION_JSON="{\"type\":\"$TYPE\",\"scope\":\"$SCOPE\",\"automation_fit\":\"$RALPH\",\"ecc\":\"$ECC\",\"plan_hash\":\"$PLAN_HASH\",\"source\":\"$SOURCE\",\"decided_at\":\"$DECIDED_AT\"}"
+# Build and write HARNESS_STATE.json
+python3 << PYEOF
+import json
+import os
 
-# Base64-encode to avoid CLEO jq parsing issues with quotes/braces
-CLASSIFICATION_B64=$(printf '%s' "$CLASSIFICATION_JSON" | base64 -w 0)
+state_file = '.planning/HARNESS_STATE.json'
 
-# Persist to CLEO notes (base64-encoded, safe for jq) - run from external state directory
-(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" update "$FOCUS_ID" --notes "[WORK_CLASSIFICATION_B64] $CLASSIFICATION_B64")
+# Load existing state or create new
+if os.path.exists(state_file):
+    with open(state_file, 'r') as f:
+        state = json.load(f)
+else:
+    state = {}
+
+# Update classification
+state['classification'] = {
+    'type': '$TYPE',
+    'scope': '$SCOPE',
+    'automation_fit': '$RALPH',
+    'ecc': '$ECC',
+    'plan_hash': '$PLAN_HASH',
+    'plan_file': '$PLAN_FILE',
+    'source': '$SOURCE',
+    'decided_at': '$DECIDED_AT'
+}
+
+# Write back
+with open(state_file, 'w') as f:
+    json.dump(state, f, indent=2)
+
+print('CLASSIFICATION_STORED')
+PYEOF
 ```
 
-### Step 8: Update STATE.md breadcrumb
+### Step 7: Update STATE.md breadcrumb
 
 ```bash
-PHASE_DIR=$(grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
 TYPE="${EXPLICIT_TYPE:-$INFERRED_TYPE}"
 RALPH="${EXPLICIT_RALPH:-$INFERRED_RALPH}"
 ECC="${EXPLICIT_ECC:-$INFERRED_ECC}"
@@ -273,15 +288,15 @@ BREADCRUMB="- Classification: RALPH $RALPH ($TYPE); ECC $ECC"
 
 # Check if breadcrumb already exists and update or insert
 if grep -q "^- Classification:" .planning/STATE.md 2>/dev/null; then
-    # Replace existing breadcrumb
     sed -i "s/^- Classification:.*/$BREADCRUMB/" .planning/STATE.md
 else
-    # Insert after the current phase line (look for Phase Directory or Current Phase)
-    sed -i "/^\(Phase Directory:\|Current Phase:\)/a $BREADCRUMB" .planning/STATE.md
+    # Append to end of file
+    echo "" >> .planning/STATE.md
+    echo "$BREADCRUMB" >> .planning/STATE.md
 fi
 ```
 
-### Step 9: Output
+### Step 8: Output
 
 ```bash
 echo "CLASSIFICATION_STORED"
@@ -290,22 +305,25 @@ echo "CLASSIFICATION_STORED"
 ## Output Values
 
 The command outputs exactly one of:
+- `PLANNING_CONTRACT_MISSING` - Required planning files missing
 - `NO_PHASE` - No phase directory found
 - `NO_PLAN` - No plan file found
-- `NO_FOCUS` - No CLEO task focused
 - `CLASSIFICATION_CACHED` - Existing classification valid (plan unchanged)
 - `CLASSIFICATION_STORED` - New classification persisted
 
-## Classification JSON Schema
+## Classification JSON Schema (in HARNESS_STATE.json)
 
 ```json
 {
-  "type": "conceptual|mechanical|mixed",
-  "scope": "bounded|unbounded",
-  "automation_fit": "allowed|discouraged|forbidden",
-  "ecc": "suggested|optional|unnecessary",
-  "plan_hash": "<sha256>",
-  "source": "explicit|inferred",
-  "decided_at": "<ISO-8601 UTC>"
+  "classification": {
+    "type": "conceptual|mechanical|mixed",
+    "scope": "bounded|unbounded",
+    "automation_fit": "allowed|discouraged|forbidden",
+    "ecc": "suggested|optional|unnecessary",
+    "plan_hash": "<sha256>",
+    "plan_file": "<path>",
+    "source": "explicit|inferred",
+    "decided_at": "<ISO-8601 UTC>"
+  }
 }
 ```

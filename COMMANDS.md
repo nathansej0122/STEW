@@ -30,20 +30,22 @@ If a command would cause side effects, it will say so explicitly.
 
 Displays the **current coordination state** across all tools.
 
-### CLEO External State
+### Gate 0: Planning Contract (REQUIRED)
 
-**CLEO project state is EXTERNAL to repos.** The harness reads CLEO state from
-`$CLEO_PROJECT_DIR`, not from the project repository.
+The planning contract (`.planning/STATE.md` + `.planning/.continue-here.md`) is **required**.
+If missing, `h:status` blocks with explicit remediation steps.
 
-If `CLEO_PROJECT_DIR` is not set, `h:status` reports "CLEO: Not configured" — this is
-a clean, non-fatal status, not an error. The harness will never recommend running
-`cleo init` inside the project repository.
+### CLEO (Optional)
+
+CLEO is **optional**. If `CLEO_PROJECT_DIR` is not set, `h:status` reports "CLEO: Not configured"
+without blocking. The harness will never recommend running `cleo init` inside the project repository.
 
 ### What it reads
-- CLEO focus (from `$CLEO_PROJECT_DIR`)
+- Planning contract (required)
+- Planning focus from .continue-here.md
 - git working tree status
-- presence of required planning files
-- governance readiness
+- AI-OPS documents (optional)
+- CLEO focus (optional, from `$CLEO_PROJECT_DIR`)
 
 ### What it never does
 - modify files
@@ -62,19 +64,21 @@ a clean, non-fatal status, not an error. The harness will never recommend runnin
 
 ### Purpose
 
-Ensures a CLEO task is focused before any routing occurs.
+Displays the **current planning focus** from the planning contract.
 
 ### What it does
-- reads CLEO focus
-- explains how to fix missing focus
+- Reads current pointer from `.continue-here.md`
+- Reads state from `STATE.md`
+- Shows the recommended file to open (where work should resume)
 
 ### What it does *not* do
-- create tasks
-- change focus automatically
+- Create or modify planning files
+- Require CLEO (CLEO is optional)
 
 ### Why it exists
 
-STEW treats task focus as non-negotiable. If focus is wrong, everything else is unsafe.
+STEW treats planning focus as the single source of truth. The `.continue-here.md` file
+determines where work should resume.
 
 ---
 
@@ -87,17 +91,19 @@ This is the **core STEW command**.
 It determines the **single next allowed action** based on current state.
 
 ### What it does
-1. Verifies CLEO focus
-2. Verifies governance files
-3. Determines current phase
-4. Detects plans
-5. Ensures classification is persisted
-6. Recommends exactly one next command
+1. Verifies planning contract (Gate 0 - REQUIRED)
+2. Reads planning focus from .continue-here.md
+3. Checks AI-OPS (optional)
+4. Determines current phase
+5. Detects plans
+6. Ensures classification is persisted (to HARNESS_STATE.json)
+7. Recommends exactly one next command
 
 ### What it never does
 - execute GSD
 - run ECC
 - invoke RALPH
+- require CLEO (CLEO is optional)
 
 ### Output guarantees
 - deterministic

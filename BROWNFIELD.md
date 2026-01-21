@@ -31,23 +31,52 @@ Not to act.
 
 ---
 
-## Step 0: Preconditions (Do Not Skip)
+## Step 0: Create Planning Contract (REQUIRED)
 
-Before touching STEW:
+The planning contract is **mandatory** for STEW routing. Create these files first.
 
+Before creating the contract:
 - The project must be in a clean git state
 - Native tools must already be installed (see INSTALL.md)
-- You must be willing to let STEW block unsafe actions
 
-If any of these are false, stop.
+From the project root:
+
+```bash
+mkdir -p .planning
+```
+
+### Create .planning/STATE.md
+
+For brownfield projects, extract the current work pointer:
+
+```bash
+cat > .planning/STATE.md << 'EOF'
+Current Work:
+  Pointer: .planning/phases/phase-1
+  Status: Stabilizing existing codebase
+
+Next Action:
+  Review existing code structure
+EOF
+```
+
+### Create .planning/.continue-here.md
+
+```bash
+cat > .planning/.continue-here.md << 'EOF'
+Current pointer: .planning/phases/phase-1/PLAN.md
+Why: Integrating STEW into existing project
+Next action: Create initial plan for stabilization
+EOF
+```
+
+**These two files are REQUIRED.** STEW will block until they exist.
 
 ---
 
-## Step 1: Configure CLEO External State
+## Step 1: Configure CLEO External State (OPTIONAL)
 
-**CLEO project state is EXTERNAL to repos.** Project repos must NOT contain `.cleo/`.
-
-If CLEO external state does not exist yet:
+CLEO is **optional** for STEW routing. If you want task tracking:
 
 ```bash
 # Create external state directory (NOT in the project repo)
@@ -63,16 +92,9 @@ export CLEO_PROJECT_DIR=~/tooling/native/cleo/projects/your-project
 
 Add the export to your `.bashrc` or `.zshrc` for persistence.
 
-If tasks already exist, pick one and focus it:
-
-```bash
-(cd $CLEO_PROJECT_DIR && cleo list)
-(cd $CLEO_PROJECT_DIR && cleo focus set T###)
-```
-
 **IMPORTANT:** Never run `cleo init` inside the project repository.
 
-STEW refuses to route without focus.
+If you skip CLEO, STEW will still route based on the planning contract.
 
 ---
 
@@ -249,8 +271,8 @@ If STEW hides RALPH:
 
 ## Common Brownfield Failure Modes
 
+- Skipping the planning contract (STATE.md + .continue-here.md)
 - Running `cleo init` inside the project repo (use external state directory)
-- Skipping CLEO focus
 - Running RALPH "just to try it"
 - Treating verification plans as mechanical work
 - Editing code before classification

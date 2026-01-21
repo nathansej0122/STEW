@@ -8,6 +8,8 @@ allowed-tools: Read, Grep, Glob, Bash
 
 You are preparing a RALPH execution. **You do NOT run RALPH inline via Claude tools.** You output the exact command for the user to run in their terminal.
 
+**Planning contract is REQUIRED. CLEO is OPTIONAL.**
+
 ## Arguments
 
 Expected arguments via `$ARGUMENTS`:
@@ -16,6 +18,35 @@ Expected arguments via `$ARGUMENTS`:
 - `[--tool claude]` - Optional tool override (default: claude)
 
 Example: `h:ralph-run 5 add-priority-field`
+
+## Gate 0: Planning Contract (REQUIRED)
+
+```bash
+MISSING=""
+if [ ! -f ".planning/STATE.md" ]; then
+  MISSING="$MISSING .planning/STATE.md"
+fi
+if [ ! -f ".planning/.continue-here.md" ]; then
+  MISSING="$MISSING .planning/.continue-here.md"
+fi
+
+if [ -n "$MISSING" ]; then
+  echo "PLANNING_CONTRACT_MISSING:$MISSING"
+else
+  echo "PLANNING_CONTRACT_OK"
+fi
+```
+
+If `PLANNING_CONTRACT_MISSING`:
+```
+=== RALPH RUN - BLOCKED ===
+
+Missing required planning contract:
+$MISSING
+
+Create them using the templates in GREENFIELD.md or BROWNFIELD.md, then rerun.
+```
+Stop.
 
 ## Preflight Validation
 
@@ -36,45 +67,31 @@ Bundle not found: .planning/ralph/[task-slug]/
 Create it first: h:ralph-init [task-slug]
 ```
 
-### 2. CLEO Focus Set
+### 2. CLEO Status (Optional - informational only)
 
-**CLEO project state is EXTERNAL to repos.** Run from `$CLEO_PROJECT_DIR`.
+CLEO is optional. If configured, show status. Do NOT block if not configured.
 
 ```bash
-# CLEO requires CLEO_PROJECT_DIR to be set (external state directory)
-if [ -z "${CLEO_PROJECT_DIR:-}" ]; then
-  echo "CLEO_NOT_CONFIGURED"
-else
-  # Resolve CLEO binary
+if [ -n "${CLEO_PROJECT_DIR:-}" ]; then
   if [ -n "${CLEO_BIN:-}" ]; then
     CLEO_CMD="$CLEO_BIN"
   elif command -v cleo >/dev/null 2>&1; then
     CLEO_CMD="cleo"
   else
-    echo "CLEO_BINARY_NOT_FOUND"
+    echo "CLEO: Binary not found"
     exit 0
   fi
-
-  # Run CLEO from external state directory
   if [ -f "$CLEO_PROJECT_DIR/.cleo/todo.json" ]; then
-    (cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show 2>/dev/null) || echo "CLEO_FOCUS_ERROR"
+    (cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show 2>/dev/null) || echo "CLEO: Error"
   else
-    echo "CLEO_NOT_INITIALIZED"
+    echo "CLEO: Not initialized"
   fi
+else
+  echo "CLEO: Not configured"
 fi
 ```
 
-If CLEO not configured, WARN:
-```
-WARNING: CLEO not configured. Set CLEO_PROJECT_DIR.
-NOTE: Do NOT run `cleo init` inside the project repository.
-```
-
-If no focus, WARN (don't block, but emphasize):
-```
-WARNING: No CLEO focus set. Run from CLEO_PROJECT_DIR:
-  (cd $CLEO_PROJECT_DIR && cleo focus set T###)
-```
+Report CLEO status but do NOT block execution.
 
 ### 3. Clean Git Tree
 
@@ -105,8 +122,9 @@ Verify it's valid JSON and has required fields.
 ```
 === RALPH RUN PREFLIGHT ===
 
+Planning Contract: OK
 Bundle: .planning/ralph/[task-slug]/
-CLEO Focus: [T### or WARNING: not set]
+CLEO (optional): [Status or "Not configured"]
 Git Status: [Clean or WARNING: dirty]
 AI-OPS: [Present or Not found]
 prd.json: [Valid or ERROR: invalid]

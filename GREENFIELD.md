@@ -19,7 +19,44 @@ This guide assumes:
 
 ---
 
-## Step 0: Create or Enter the Project Repo
+## Step 0: Create Planning Contract (REQUIRED)
+
+The planning contract is **mandatory** for STEW routing. Create these files first.
+
+From the project root:
+
+```bash
+mkdir -p .planning
+```
+
+### Create .planning/STATE.md
+
+```bash
+cat > .planning/STATE.md << 'EOF'
+Current Work:
+  Pointer: .planning/phases/phase-1
+  Status: Not started
+
+Next Action:
+  Create phase-1 plan document
+EOF
+```
+
+### Create .planning/.continue-here.md
+
+```bash
+cat > .planning/.continue-here.md << 'EOF'
+Current pointer: .planning/phases/phase-1/PLAN.md
+Why: Starting new project
+Next action: Create the phase-1 plan document
+EOF
+```
+
+**These two files are REQUIRED.** STEW will block until they exist.
+
+---
+
+## Step 1: Create or Enter the Project Repo
 
 ```bash
 mkdir my-project
@@ -27,15 +64,13 @@ cd my-project
 git init
 ```
 
-Nothing else should exist yet.
+Then create the planning contract (Step 0).
 
 ---
 
-## Step 1: Configure CLEO External State
+## Step 2: Configure CLEO External State (OPTIONAL)
 
-**CLEO project state is EXTERNAL to repos.** Project repos must NOT contain `.cleo/`.
-
-CLEO must be configured **before anything else**.
+CLEO is **optional** for STEW routing. If you want task tracking:
 
 ```bash
 # Create external state directory (NOT in the project repo)
@@ -51,20 +86,13 @@ export CLEO_PROJECT_DIR=~/tooling/native/cleo/projects/my-project
 
 Add the export to your `.bashrc` or `.zshrc` for persistence.
 
-Then create at least one task and focus it (from CLEO_PROJECT_DIR):
-
-```bash
-(cd $CLEO_PROJECT_DIR && cleo add "Initial task" --type task)
-(cd $CLEO_PROJECT_DIR && cleo focus set T001)
-```
-
 **IMPORTANT:** Never run `cleo init` inside the project repository.
 
-If no task is focused, STEW will refuse to route.
+If you skip CLEO, STEW will still route based on the planning contract.
 
 ---
 
-## Step 2: Expose GSD Commands
+## Step 3: Expose GSD Commands
 
 GSD is not copied into projects. You must expose it.
 
@@ -85,39 +113,15 @@ If this fails, stop and fix it.
 
 ---
 
-## Step 3: Create Planning Skeleton
+## Step 4: Create Planning Skeleton (Optional)
 
-Create the minimum required planning files:
-
-```bash
-mkdir -p .planning/phases
-
-touch .planning/AI-OPS.md
-```
-
-At minimum, AI-OPS.md must exist.
-
----
-
-## Step 4: Initialize GSD Project
-
-Run:
+Create additional planning files if desired:
 
 ```bash
-/gsd:new-project
+mkdir -p .planning/phases/phase-1
+
+touch .planning/AI-OPS.md  # Optional but recommended
 ```
-
-Follow the prompts.
-
-For greenfield projects:
-- research is optional
-- minimal scope is fine
-
-This will create:
-- PROJECT.md
-- ROADMAP.md
-- STATE.md
-- config.json
 
 ---
 
@@ -130,16 +134,17 @@ h:route
 ```
 
 At this stage, STEW will:
-- confirm CLEO focus
-- confirm planning files
+- verify planning contract exists
+- read current pointer from .continue-here.md
 - detect that no plan exists
 - recommend exactly one action
 
 Expected output:
 
 ```
-=== GSD RECOMMENDATION ===
-Recommend: gsd:plan-phase
+=== RECOMMENDATION ===
+No plan file found. Create a plan document in the phase directory.
+Recommend: Create PLAN.md or use gsd:plan-phase
 ```
 
 Do not run anything else.
@@ -169,7 +174,7 @@ h:route
 Now STEW will:
 - detect the plan
 - classify the work (once)
-- persist the classification
+- persist the classification to HARNESS_STATE.json
 - recommend the next action
 
 You will see:
@@ -206,9 +211,8 @@ Never skip routing.
 
 ## Common Greenfield Mistakes
 
+- Skipping the planning contract (STATE.md + .continue-here.md)
 - Running `cleo init` inside the project repo (use external state directory)
-- Running GSD without CLEO focus
-- Skipping AI-OPS.md
 - Forcing automation early
 - Rerunning commands instead of fixing state
 
