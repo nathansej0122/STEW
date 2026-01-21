@@ -60,6 +60,51 @@ without blocking. The harness will never recommend running `cleo init` inside th
 
 ---
 
+## h:bootstrap
+
+### Purpose
+
+Creates the **required planning contract files** if they do not exist.
+
+### What it does
+
+- Creates `.planning/` directory if missing
+- Creates `.planning/STATE.md` with minimal template if missing
+- Creates `.planning/.continue-here.md` with minimal template if missing
+- Reports what was created vs skipped
+- Reminds user to edit placeholder values
+
+### What it does *not* do
+
+- Overwrite existing files (safe to run multiple times)
+- Auto-run (must be explicitly invoked by user)
+
+### When to use
+
+- When `h:status` blocks due to missing planning contract
+- When starting a new project and you want STEW to create the files for you
+
+### Templates created
+
+**`.planning/STATE.md`:**
+```
+Current Work:
+  Pointer: <path to current plan doc or phase directory>
+  Status: <one-line status>
+
+Next Action:
+  <one-line next step>
+```
+
+**`.planning/.continue-here.md`:**
+```
+Current pointer: <path to plan doc to resume>
+Why: <one-line context>
+Next action: <one-line next step>
+```
+
+---
+
 ## h:focus
 
 ### Purpose

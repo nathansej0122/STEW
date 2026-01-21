@@ -52,6 +52,8 @@ STEW is intentionally strict.
 
 The planning contract is the only hard gate. CLEO is optional.
 
+If the planning contract is missing, run `h:bootstrap` to create the required files.
+
 ---
 
 ## What You Get From Bundling These Tools

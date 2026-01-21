@@ -88,7 +88,11 @@ If `PLANNING_CONTRACT: MISSING` appears in output, show this block message and s
 ```
 === HARNESS STATUS - BLOCKED ===
 
-Missing required planning contract. Create them using templates below, then rerun h:status.
+Missing required planning contract.
+
+To create the missing files now, run: h:bootstrap
+
+Or create them manually using templates below, then rerun h:status.
 
 Template: .planning/STATE.md
 ---
