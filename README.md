@@ -116,3 +116,5 @@ STEW is opinionated by design. If something feels restrictive, it usually is.
 
 If STEW blocks you, fix the underlying state rather than bypassing governance.
 
+© 2026 Variegate Labs LLC. Released under the MIT License.
+
