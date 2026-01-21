@@ -76,6 +76,7 @@ Skipped (already exist):
 1. Edit the placeholder values in .planning/STATE.md
 2. Edit the placeholder values in .planning/.continue-here.md
 3. Run h:status to verify the planning contract
+4. Commit with: STEW_COMMIT_MODE=planning STEW_COMMIT_MSG="initialize planning contract" STEW_COMMIT_YES=1 h:commit
 ```
 
 ## Rules

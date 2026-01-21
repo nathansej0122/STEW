@@ -276,6 +276,80 @@ Execution always requires explicit user confirmation.
 
 ---
 
+## h:commit
+
+### Purpose
+
+Commits changes using **explicit per-file staging** with mode-based allowlists.
+
+This is the GSD-style commit strategy: frequent commits are OK, but only for verified outcomes.
+
+### What it does
+
+- Validates branch (refuses main/master by default)
+- Detects changed files via `git status --porcelain`
+- Validates files against mode-specific allowlist
+- Detects placeholder text in planning files
+- Stages files individually (NEVER `git add .` or `-A`)
+- Commits with conventional commit message format
+
+### What it never does
+
+- Use `git add .` or `git add -A`
+- Commit `.gitignore`
+- Commit to main/master without explicit override
+- Commit placeholder scaffolding without explicit override
+- Auto-commit (dry-run by default)
+
+### Modes
+
+| Mode | Allowed Files |
+|------|---------------|
+| `planning` | `.planning/**` (with placeholder check) |
+| `harness` | `.claude/commands/h/**`, `scripts/h/**` |
+| `docs` | `README.md`, `COMMANDS.md`, `INSTALL.md`, `BROWNFIELD.md`, `GREENFIELD.md`, `ARCHITECTURE.md`, `CONCEPTS.md`, `GOVERNANCE.md` |
+| `auto` | Infers from changed files; refuses if mixed |
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STEW_COMMIT_MSG` | (required) | Commit message |
+| `STEW_COMMIT_TYPE` | `chore` | Conventional type (feat, fix, chore, docs) |
+| `STEW_COMMIT_SCOPE` | `harness` | Scope for commit message |
+| `STEW_COMMIT_MODE` | `auto` | One of: planning, harness, docs, auto |
+| `STEW_COMMIT_YES` | `0` | If 1, actually commit; if 0, dry-run |
+| `STEW_COMMIT_ALLOW_PLACEHOLDERS` | `0` | If 1, allow placeholder text |
+| `STEW_COMMIT_ALLOW_MAIN` | `0` | If 1, allow commits to main/master |
+
+### Examples
+
+**Planning mode:**
+```bash
+STEW_COMMIT_MODE=planning \
+STEW_COMMIT_MSG="initialize planning contract" \
+STEW_COMMIT_YES=1 \
+h:commit
+```
+
+**Harness mode:**
+```bash
+STEW_COMMIT_MODE=harness \
+STEW_COMMIT_TYPE=feat \
+STEW_COMMIT_MSG="add bootstrap command" \
+STEW_COMMIT_YES=1 \
+h:commit
+```
+
+### When to use
+
+- After editing planning files (`.planning/*`)
+- After updating harness commands (`.claude/commands/h/*`)
+- After updating documentation
+- When you want explicit control over what gets committed
+
+---
+
 ## Design Guarantees
 
 Across all commands:
