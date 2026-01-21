@@ -28,6 +28,14 @@ fi
 
 STATE_CONTENT=$(cat ".planning/STATE.md")
 
+# --- Sanitize function: strip whitespace, backticks, and quotes from paths ---
+sanitize_path() {
+  echo "$1" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' \
+    | sed 's/^`//' | sed 's/`$//' \
+    | sed 's/^"//' | sed 's/"$//' \
+    | sed "s/^'//" | sed "s/'$//"
+}
+
 # --- Extract CURRENT_POINTER from STATE.md ---
 # Priority order:
 #   1. "Resume file:" line
@@ -39,6 +47,7 @@ CURRENT_POINTER=""
 RESUME_LINE=$(echo "$STATE_CONTENT" | grep -i "^[[:space:]]*Resume file:" | head -1)
 if [ -n "$RESUME_LINE" ]; then
   CURRENT_POINTER=$(echo "$RESUME_LINE" | sed 's/^[[:space:]]*[Rr]esume [Ff]ile:[[:space:]]*//' | sed 's/[[:space:]]*$//')
+  CURRENT_POINTER=$(sanitize_path "$CURRENT_POINTER")
 fi
 
 # Try "Pointer:" if not found
@@ -46,6 +55,7 @@ if [ -z "$CURRENT_POINTER" ] || [ "$CURRENT_POINTER" = "<path to current plan do
   POINTER_LINE=$(echo "$STATE_CONTENT" | grep -i "^[[:space:]]*Pointer:" | head -1)
   if [ -n "$POINTER_LINE" ]; then
     CURRENT_POINTER=$(echo "$POINTER_LINE" | sed 's/^[[:space:]]*[Pp]ointer:[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    CURRENT_POINTER=$(sanitize_path "$CURRENT_POINTER")
   fi
 fi
 
@@ -55,10 +65,12 @@ if [ -z "$CURRENT_POINTER" ] || echo "$CURRENT_POINTER" | grep -q "^<"; then
   PHASE_LINE=$(echo "$STATE_CONTENT" | grep -i "^[[:space:]]*Phase Directory:" | head -1)
   if [ -n "$PHASE_LINE" ]; then
     PHASE_DIR=$(echo "$PHASE_LINE" | sed 's/^[[:space:]]*[Pp]hase [Dd]irectory:[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    PHASE_DIR=$(sanitize_path "$PHASE_DIR")
   else
     PHASE_LINE=$(echo "$STATE_CONTENT" | grep -i "^[[:space:]]*Current Phase:" | head -1)
     if [ -n "$PHASE_LINE" ]; then
       PHASE_DIR=$(echo "$PHASE_LINE" | sed 's/^[[:space:]]*[Cc]urrent [Pp]hase:[[:space:]]*//' | sed 's/[[:space:]]*$//')
+      PHASE_DIR=$(sanitize_path "$PHASE_DIR")
     fi
   fi
 
@@ -85,18 +97,21 @@ if [ -z "$CURRENT_POINTER" ] || echo "$CURRENT_POINTER" | grep -q "^<"; then
   exit 1
 fi
 
-# --- Normalize CURRENT_POINTER (never point to another .continue-here.md) ---
-# If CURRENT_POINTER is a .continue-here.md, resolve to the actual PLAN file
+# --- Normalize CURRENT_POINTER (NEVER output a .continue-here.md pointer) ---
+# Hard rule: If CURRENT_POINTER ends with .continue-here.md, resolve to PLAN.md or BLOCK
 if echo "$CURRENT_POINTER" | grep -q '\.continue-here\.md$'; then
   NESTED_DIR=$(dirname "$CURRENT_POINTER")
-  # Try to read nested pointer from the .continue-here.md file
+
+  # Try to read nested pointer from the .continue-here.md file first
   if [ -f "$CURRENT_POINTER" ]; then
     NESTED_POINTER=$(grep -i "^[[:space:]]*Current pointer:" "$CURRENT_POINTER" 2>/dev/null | head -1 | sed 's/^[[:space:]]*[Cc]urrent [Pp]ointer:[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    NESTED_POINTER=$(sanitize_path "$NESTED_POINTER")
     if [ -n "$NESTED_POINTER" ] && ! echo "$NESTED_POINTER" | grep -q '\.continue-here\.md$'; then
       CURRENT_POINTER="$NESTED_POINTER"
     fi
   fi
-  # If still a .continue-here.md, resolve to PLAN file in that directory
+
+  # If still a .continue-here.md after nested resolution, resolve to PLAN file or BLOCK
   if echo "$CURRENT_POINTER" | grep -q '\.continue-here\.md$'; then
     if [ -f "$NESTED_DIR/PLAN.md" ]; then
       CURRENT_POINTER="$NESTED_DIR/PLAN.md"
@@ -104,6 +119,11 @@ if echo "$CURRENT_POINTER" | grep -q '\.continue-here\.md$'; then
       FIRST_PLAN=$(find "$NESTED_DIR" -maxdepth 1 -name "*-PLAN.md" -type f 2>/dev/null | head -1)
       if [ -n "$FIRST_PLAN" ]; then
         CURRENT_POINTER="$FIRST_PLAN"
+      else
+        echo "SYNC_PLANNING: BLOCKED"
+        echo "REASON: Pointer resolves to .continue-here.md but no PLAN.md found in $NESTED_DIR"
+        echo "HINT: Create $NESTED_DIR/PLAN.md or update STATE.md to point directly to a plan file"
+        exit 1
       fi
     fi
   fi
@@ -269,9 +289,11 @@ The command extracts values from STATE.md using these patterns:
    - Otherwise the directory itself
 
 **CURRENT_POINTER normalization** (applied after extraction):
+- All extracted paths are sanitized: whitespace, backticks, and quotes stripped
 - If path ends with `.continue-here.md`, resolve to actual PLAN file:
   - Read nested `Current pointer:` from that file if it exists and points to a real file
   - Otherwise resolve `<dir>/PLAN.md` or first `*-PLAN.md` in that directory
+  - **BLOCKS** if no PLAN.md found in the directory (hard rule)
 - If path is a directory, resolve to `PLAN.md` or first `*-PLAN.md` within
 - **Guarantee**: Output never points to a `.continue-here.md` file
 
