@@ -8,19 +8,59 @@ allowed-tools: Bash, Skill
 
 Coordination router. Reads state, recommends actions. **Never executes GSD. Never re-reasons. Uses persisted classification only.**
 
+**CLEO project state is EXTERNAL to repos.** All CLEO commands must run from `$CLEO_PROJECT_DIR`.
+
 ---
 
 ## Gate 1: CLEO Focus
 
 ```bash
-FOCUS_OUTPUT=$(cleo focus show 2>/dev/null)
-if [ -z "$FOCUS_OUTPUT" ] || echo "$FOCUS_OUTPUT" | grep -q "No task focused"; then
-    echo "NO_FOCUS"
+# CLEO requires CLEO_PROJECT_DIR to be set (external state directory)
+if [ -z "${CLEO_PROJECT_DIR:-}" ]; then
+    echo "CLEO_NOT_CONFIGURED"
 else
-    echo "FOCUS_OK"
-    echo "$FOCUS_OUTPUT"
+  # Resolve CLEO binary
+  if [ -n "${CLEO_BIN:-}" ]; then
+    CLEO_CMD="$CLEO_BIN"
+  elif command -v cleo >/dev/null 2>&1; then
+    CLEO_CMD="cleo"
+  else
+    echo "CLEO_BINARY_NOT_FOUND"
+    exit 0
+  fi
+
+  # Check if CLEO is initialized
+  if [ ! -f "$CLEO_PROJECT_DIR/.cleo/todo.json" ]; then
+    echo "CLEO_NOT_INITIALIZED"
+    exit 0
+  fi
+
+  # Run CLEO from the external project state directory
+  FOCUS_OUTPUT=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show 2>/dev/null)
+  if [ -z "$FOCUS_OUTPUT" ] || echo "$FOCUS_OUTPUT" | grep -q "No task focused"; then
+      echo "NO_FOCUS"
+  else
+      echo "FOCUS_OK"
+      echo "$FOCUS_OUTPUT"
+  fi
 fi
 ```
+
+If `CLEO_NOT_CONFIGURED`:
+```
+=== HARNESS ROUTE - BLOCKED ===
+CLEO not configured. Set CLEO_PROJECT_DIR to your external CLEO state directory.
+NOTE: Do NOT run `cleo init` inside the project repository.
+```
+Stop.
+
+If `CLEO_NOT_INITIALIZED`:
+```
+=== HARNESS ROUTE - BLOCKED ===
+CLEO project state not initialized in $CLEO_PROJECT_DIR.
+Initialize CLEO in that directory (not in the project repo).
+```
+Stop.
 
 If `NO_FOCUS`:
 ```
@@ -92,8 +132,15 @@ fi
 If `PLAN_FILE` exists, call `h:_classify` via Skill tool, then read persisted classification:
 
 ```bash
-FOCUS_ID=$(cleo focus show -q 2>/dev/null)
-TASK_OUTPUT=$(cleo show "$FOCUS_ID" 2>/dev/null)
+# Resolve CLEO binary and run from external state directory
+if [ -n "${CLEO_BIN:-}" ]; then
+  CLEO_CMD="$CLEO_BIN"
+else
+  CLEO_CMD="cleo"
+fi
+
+FOCUS_ID=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show -q 2>/dev/null)
+TASK_OUTPUT=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" show "$FOCUS_ID" 2>/dev/null)
 
 # Extract and decode base64-encoded classification (last entry wins)
 python3 << 'PYEOF'

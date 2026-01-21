@@ -8,6 +8,27 @@ allowed-tools: Bash
 
 **Not user-callable. Called by h:route only.**
 
+**CLEO project state is EXTERNAL to repos.** All CLEO commands must run from `$CLEO_PROJECT_DIR`.
+
+## CLEO Invocation Setup
+
+Before running CLEO commands, resolve the binary and validate the environment:
+
+```bash
+# Resolve CLEO binary
+if [ -n "${CLEO_BIN:-}" ]; then
+  CLEO_CMD="$CLEO_BIN"
+elif command -v cleo >/dev/null 2>&1; then
+  CLEO_CMD="cleo"
+else
+  echo "CLEO_BINARY_NOT_FOUND"
+  exit 1
+fi
+
+# All CLEO commands must run from CLEO_PROJECT_DIR
+# Example: (cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show)
+```
+
 ## Execution
 
 Run these Bash tool calls in sequence:
@@ -26,7 +47,8 @@ echo "PLAN_FILE=$PLAN_FILE"
 ### Step 2: Get focused task ID
 
 ```bash
-FOCUS_ID=$(cleo focus show -q 2>/dev/null)
+# Run CLEO from external project state directory
+FOCUS_ID=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show -q 2>/dev/null)
 if [ -z "$FOCUS_ID" ]; then echo "NO_FOCUS"; exit 0; fi
 echo "FOCUS_ID=$FOCUS_ID"
 ```
@@ -41,8 +63,9 @@ echo "PLAN_HASH=$PLAN_HASH"
 ### Step 4: Check for existing classification
 
 ```bash
-FOCUS_ID=$(cleo focus show -q 2>/dev/null)
-TASK_OUTPUT=$(cleo show "$FOCUS_ID" 2>/dev/null)
+# Run CLEO from external project state directory
+FOCUS_ID=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show -q 2>/dev/null)
+TASK_OUTPUT=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" show "$FOCUS_ID" 2>/dev/null)
 
 # Extract base64-encoded classification and decode (last entry wins)
 EXISTING_JSON=$(echo "$TASK_OUTPUT" | python3 -c "
@@ -219,7 +242,9 @@ SCOPE="${EXPLICIT_SCOPE:-$INFERRED_SCOPE}"
 RALPH="${EXPLICIT_RALPH:-$INFERRED_RALPH}"
 ECC="${EXPLICIT_ECC:-$INFERRED_ECC}"
 SOURCE="${SOURCE}"
-FOCUS_ID=$(cleo focus show -q 2>/dev/null)
+
+# Run CLEO from external project state directory
+FOCUS_ID=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show -q 2>/dev/null)
 PLAN_FILE=$(grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
 PLAN_FILE=$(ls "$PLAN_FILE"/*-PLAN.md "$PLAN_FILE"/PLAN.md 2>/dev/null | sort | head -1)
 PLAN_HASH=$(sha256sum "$PLAN_FILE" | cut -d' ' -f1)
@@ -231,8 +256,8 @@ CLASSIFICATION_JSON="{\"type\":\"$TYPE\",\"scope\":\"$SCOPE\",\"automation_fit\"
 # Base64-encode to avoid CLEO jq parsing issues with quotes/braces
 CLASSIFICATION_B64=$(printf '%s' "$CLASSIFICATION_JSON" | base64 -w 0)
 
-# Persist to CLEO notes (base64-encoded, safe for jq)
-cleo update "$FOCUS_ID" --notes "[WORK_CLASSIFICATION_B64] $CLASSIFICATION_B64"
+# Persist to CLEO notes (base64-encoded, safe for jq) - run from external state directory
+(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" update "$FOCUS_ID" --notes "[WORK_CLASSIFICATION_B64] $CLASSIFICATION_B64")
 ```
 
 ### Step 8: Update STATE.md breadcrumb

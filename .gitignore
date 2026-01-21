@@ -1,5 +1,6 @@
-# CLEO runtime state
-.cleo/
+# NOTE: .cleo/ is NOT listed here because CLEO state must be EXTERNAL to repos.
+# If you see .cleo/ in this repo, it is misconfigured.
+# See INSTALL.md for proper CLEO_PROJECT_DIR configuration.
 
 # Local Claude settings
 .claude/settings.local.json

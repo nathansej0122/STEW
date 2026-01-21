@@ -104,8 +104,11 @@ If any command fails, fix that **before continuing**.
 This is the most common point of confusion.
 
 ### CLEO
-- Must be runnable as `cleo` on your PATH
-- In your setup, this is provided via a dev-mode symlink to the native clone
+- Must be runnable as `cleo` on your PATH (or set `CLEO_BIN`)
+- **CLEO project state is EXTERNAL to repos** — project repos must NOT contain `.cleo/`
+- Set `CLEO_PROJECT_DIR` to point to the external directory containing CLEO state
+- Example: `export CLEO_PROJECT_DIR=~/tooling/native/cleo/projects/my-project`
+- In your setup, the binary is provided via a dev-mode symlink to the native clone
 
 ### GSD (Get Shit Done)
 - GSD commands are **not** installed into projects
@@ -142,6 +145,60 @@ Projects never run RALPH directly.
 
 ---
 
+## CLEO External State Configuration
+
+**CLEO project state must NOT live inside project repositories.**
+
+CLEO state (`.cleo/todo.json` and related files) is stored in an external directory.
+This prevents:
+- state pollution in project repos
+- accidental commits of CLEO internal files
+- conflicts when the same repo is used in multiple contexts
+
+### Setting Up CLEO Project State
+
+1. Create a directory for CLEO project state:
+
+```bash
+mkdir -p ~/tooling/native/cleo/projects/my-project
+```
+
+2. Initialize CLEO in that directory (NOT in your project repo):
+
+```bash
+cd ~/tooling/native/cleo/projects/my-project
+cleo init
+```
+
+3. Set the environment variable:
+
+```bash
+export CLEO_PROJECT_DIR=~/tooling/native/cleo/projects/my-project
+```
+
+Add this to your `.bashrc` or `.zshrc` for persistence.
+
+### Running CLEO Commands
+
+When working with a project under STEW governance:
+
+```bash
+# All CLEO commands must run from CLEO_PROJECT_DIR
+(cd $CLEO_PROJECT_DIR && cleo list)
+(cd $CLEO_PROJECT_DIR && cleo focus set T001)
+(cd $CLEO_PROJECT_DIR && cleo focus show)
+```
+
+The harness commands (`h:status`, `h:focus`, `h:route`) handle this automatically.
+
+### Important
+
+- **NEVER** run `cleo init` inside a project repository
+- Project repos should NOT contain a `.cleo/` directory
+- If you see `.cleo/` in a project repo, it is misconfigured
+
+---
+
 ## Installing STEW Into a Project
 
 Once native tools are verified, install STEW into a project.
@@ -171,8 +228,19 @@ h:status
 
 A successful install shows:
 - STEW commands available
-- CLEO focus detected (or instructs you to set one)
+- CLEO status (configured, not configured, focused, or no focus)
 - Missing prerequisites clearly reported
+
+**Expected CLEO statuses:**
+
+| Status | Meaning |
+|--------|---------|
+| `T### - Task Title` | CLEO configured and focused — ready to work |
+| `None - no focused task` | CLEO configured but no focus set |
+| `Not configured` | `CLEO_PROJECT_DIR` not set |
+| `Project state not initialized` | `CLEO_PROJECT_DIR` set but not initialized |
+
+If CLEO shows "Not configured", set `CLEO_PROJECT_DIR` to your external CLEO state directory.
 
 If `h:status` blocks, read the error message carefully. It is explicit by design.
 

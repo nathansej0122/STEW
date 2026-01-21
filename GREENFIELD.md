@@ -31,20 +31,34 @@ Nothing else should exist yet.
 
 ---
 
-## Step 1: Initialize CLEO
+## Step 1: Configure CLEO External State
 
-CLEO must be initialized **before anything else**.
+**CLEO project state is EXTERNAL to repos.** Project repos must NOT contain `.cleo/`.
+
+CLEO must be configured **before anything else**.
 
 ```bash
+# Create external state directory (NOT in the project repo)
+mkdir -p ~/tooling/native/cleo/projects/my-project
+
+# Initialize CLEO in that directory
+cd ~/tooling/native/cleo/projects/my-project
 cleo init
+
+# Set the environment variable
+export CLEO_PROJECT_DIR=~/tooling/native/cleo/projects/my-project
 ```
 
-Then create at least one task and focus it:
+Add the export to your `.bashrc` or `.zshrc` for persistence.
+
+Then create at least one task and focus it (from CLEO_PROJECT_DIR):
 
 ```bash
-cleo add "Initial task" --type task
-cleo focus set T001
+(cd $CLEO_PROJECT_DIR && cleo add "Initial task" --type task)
+(cd $CLEO_PROJECT_DIR && cleo focus set T001)
 ```
+
+**IMPORTANT:** Never run `cleo init` inside the project repository.
 
 If no task is focused, STEW will refuse to route.
 
@@ -192,6 +206,7 @@ Never skip routing.
 
 ## Common Greenfield Mistakes
 
+- Running `cleo init` inside the project repo (use external state directory)
 - Running GSD without CLEO focus
 - Skipping AI-OPS.md
 - Forcing automation early

@@ -43,20 +43,34 @@ If any of these are false, stop.
 
 ---
 
-## Step 1: Initialize CLEO (If Not Already)
+## Step 1: Configure CLEO External State
 
-From the project root:
+**CLEO project state is EXTERNAL to repos.** Project repos must NOT contain `.cleo/`.
+
+If CLEO external state does not exist yet:
 
 ```bash
+# Create external state directory (NOT in the project repo)
+mkdir -p ~/tooling/native/cleo/projects/your-project
+
+# Initialize CLEO in that directory
+cd ~/tooling/native/cleo/projects/your-project
 cleo init
+
+# Set the environment variable
+export CLEO_PROJECT_DIR=~/tooling/native/cleo/projects/your-project
 ```
+
+Add the export to your `.bashrc` or `.zshrc` for persistence.
 
 If tasks already exist, pick one and focus it:
 
 ```bash
-cleo list
-cleo focus set T###
+(cd $CLEO_PROJECT_DIR && cleo list)
+(cd $CLEO_PROJECT_DIR && cleo focus set T###)
 ```
+
+**IMPORTANT:** Never run `cleo init` inside the project repository.
 
 STEW refuses to route without focus.
 
@@ -235,8 +249,9 @@ If STEW hides RALPH:
 
 ## Common Brownfield Failure Modes
 
+- Running `cleo init` inside the project repo (use external state directory)
 - Skipping CLEO focus
-- Running RALPH “just to try it”
+- Running RALPH "just to try it"
 - Treating verification plans as mechanical work
 - Editing code before classification
 

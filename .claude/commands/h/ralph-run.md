@@ -38,17 +38,42 @@ Create it first: h:ralph-init [task-slug]
 
 ### 2. CLEO Focus Set
 
+**CLEO project state is EXTERNAL to repos.** Run from `$CLEO_PROJECT_DIR`.
+
 ```bash
-if [ -n "${CLEO_BIN:-}" ]; then
-  "$CLEO_BIN" focus show
-elif command -v cleo >/dev/null 2>&1; then
-  cleo focus show
+# CLEO requires CLEO_PROJECT_DIR to be set (external state directory)
+if [ -z "${CLEO_PROJECT_DIR:-}" ]; then
+  echo "CLEO_NOT_CONFIGURED"
+else
+  # Resolve CLEO binary
+  if [ -n "${CLEO_BIN:-}" ]; then
+    CLEO_CMD="$CLEO_BIN"
+  elif command -v cleo >/dev/null 2>&1; then
+    CLEO_CMD="cleo"
+  else
+    echo "CLEO_BINARY_NOT_FOUND"
+    exit 0
+  fi
+
+  # Run CLEO from external state directory
+  if [ -f "$CLEO_PROJECT_DIR/.cleo/todo.json" ]; then
+    (cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show 2>/dev/null) || echo "CLEO_FOCUS_ERROR"
+  else
+    echo "CLEO_NOT_INITIALIZED"
+  fi
 fi
+```
+
+If CLEO not configured, WARN:
+```
+WARNING: CLEO not configured. Set CLEO_PROJECT_DIR.
+NOTE: Do NOT run `cleo init` inside the project repository.
 ```
 
 If no focus, WARN (don't block, but emphasize):
 ```
-WARNING: No CLEO focus set. Recommended: cleo focus set T###
+WARNING: No CLEO focus set. Run from CLEO_PROJECT_DIR:
+  (cd $CLEO_PROJECT_DIR && cleo focus set T###)
 ```
 
 ### 3. Clean Git Tree

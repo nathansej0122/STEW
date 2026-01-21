@@ -30,8 +30,17 @@ If a command would cause side effects, it will say so explicitly.
 
 Displays the **current coordination state** across all tools.
 
+### CLEO External State
+
+**CLEO project state is EXTERNAL to repos.** The harness reads CLEO state from
+`$CLEO_PROJECT_DIR`, not from the project repository.
+
+If `CLEO_PROJECT_DIR` is not set, `h:status` reports "CLEO: Not configured" — this is
+a clean, non-fatal status, not an error. The harness will never recommend running
+`cleo init` inside the project repository.
+
 ### What it reads
-- CLEO focus
+- CLEO focus (from `$CLEO_PROJECT_DIR`)
 - git working tree status
 - presence of required planning files
 - governance readiness
@@ -40,6 +49,7 @@ Displays the **current coordination state** across all tools.
 - modify files
 - change focus
 - execute tools
+- recommend `cleo init` in the project repo
 
 ### When to use
 - at the start of a session
@@ -343,4 +353,56 @@ As projects grow, this separation is what keeps token usage predictable and beha
 - GSD builds what the contract specifies
 
 You do not drive using receipts.
+
+---
+
+## Regression Test: CLEO External State Handling
+
+To verify that the harness correctly handles CLEO external state, test these scenarios:
+
+### Scenario 1: No CLEO_PROJECT_DIR set
+
+```bash
+unset CLEO_PROJECT_DIR
+h:status
+```
+
+**Expected output:**
+- CLEO status line shows: `Not configured (set CLEO_PROJECT_DIR)`
+- No JSON error blobs (e.g., `E_NOT_INITIALIZED`)
+- No recommendation to run `cleo init` in the project repo
+
+### Scenario 2: CLEO_PROJECT_DIR set but uninitialized
+
+```bash
+export CLEO_PROJECT_DIR=/tmp/test-cleo-uninitialized
+mkdir -p "$CLEO_PROJECT_DIR"
+h:status
+```
+
+**Expected output:**
+- CLEO status line shows: `Project state not initialized in $CLEO_PROJECT_DIR`
+- No JSON error blobs
+- May recommend initializing CLEO *in the external directory*, NOT in the project repo
+
+### Scenario 3: CLEO_PROJECT_DIR set and initialized
+
+```bash
+export CLEO_PROJECT_DIR=/tmp/test-cleo-initialized
+mkdir -p "$CLEO_PROJECT_DIR"
+(cd "$CLEO_PROJECT_DIR" && cleo init)
+(cd "$CLEO_PROJECT_DIR" && cleo add "Test task" && cleo focus set T001)
+h:status
+```
+
+**Expected output:**
+- CLEO status line shows: `T001 - Test task`
+- Recommendations proceed normally (e.g., `h:route`)
+
+### Verification Checklist
+
+- [ ] `h:status` never emits raw JSON error objects
+- [ ] `h:status` never recommends `cleo init` inside the project repo
+- [ ] `h:focus` handles all three scenarios cleanly
+- [ ] `h:route` blocks with clear messages when CLEO is not configured
 
