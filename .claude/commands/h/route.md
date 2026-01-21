@@ -6,136 +6,168 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Harness Route Command
 
-You are the coordination router. You analyze the current state and recommend the next native GSD or ECC command. **You do NOT execute GSD commands; you only recommend them.**
+Coordination router. Reads state, recommends actions. **Never executes GSD. Never re-reasons.**
 
-## Hard Gate: CLEO Focus Required
+---
 
-First, check for focused task:
+## Gate 1: CLEO Focus
+
 ```bash
-if [ -n "${CLEO_BIN:-}" ]; then
-  "$CLEO_BIN" focus show
-elif command -v cleo >/dev/null 2>&1; then
-  cleo focus show
-else
-  echo "CLEO_NOT_FOUND"
-fi
+cleo focus show 2>/dev/null || echo "NO_FOCUS"
 ```
 
-If no focused task, STOP immediately:
+If no focus:
 ```
 === HARNESS ROUTE - BLOCKED ===
-
-No CLEO focus set. Cannot route without an active task.
-
+No CLEO focus set.
 Run: h:focus
 ```
+Stop.
 
-## AI-OPS Preflight Gate
+---
 
-Check for `.planning/AI-OPS.md`:
+## Gate 2: AI-OPS
 
-If **missing**, STOP:
+Check `.planning/AI-OPS.md` exists.
+
+If missing:
 ```
 === HARNESS ROUTE - BLOCKED ===
-
-AI-OPS.md not found. This repo requires AI-OPS onboarding before GSD execution.
-
-Recommended:
-  1. Create .planning/AI-OPS.md with operational constraints
-  2. Run h:status to verify setup
-  3. Then retry h:route
+AI-OPS.md not found.
+Run: Create .planning/AI-OPS.md
 ```
+Stop.
 
-If **present**, read it to determine:
-- Whether work is allowed on the focused task
-- Any NEVER-AUTOMATE exclusions
-- Risk zones and constraints
+---
 
-## State Analysis
+## Gate 3: Phase Directory
 
-Read the following files (if they exist):
-- `.planning/STATE.md` - Current execution state
-- `.planning/ROADMAP.md` - Phase structure
-- `.planning/PROJECT.md` - Project overview
-- `.planning/config.json` - Configuration
-
-## Plan Detection (Phase-Aware)
-
-Plan detection MUST be phase-aware. Follow these steps:
-
-### Step 1: Extract Current Phase Directory from STATE.md
-
-Read `.planning/STATE.md` and look for the current phase directory path. Common patterns:
-- `Current Phase: phases/01-foundation/`
-- `Phase Directory: .planning/phases/02-core/`
-- A markdown link or path reference to a phase directory
-
-If STATE.md does not exist or current phase cannot be determined, output:
-```
-Unable to determine current phase directory from STATE.md.
-Recommend running gsd:progress for phase context.
-```
-And STOP routing (do not guess or search all of .planning).
-
-### Step 2: Count Plans in Current Phase Directory Only
-
-Once you have the phase directory path, check for plans ONLY in that directory:
 ```bash
-# Example: if phase dir is .planning/phases/01-foundation/
-ls .planning/phases/01-foundation/*-PLAN.md .planning/phases/01-foundation/PLAN.md 2>/dev/null | wc -l
+grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1
 ```
 
-A plan exists if the count is >= 1.
+If empty:
+```
+Unable to determine current phase from STATE.md.
+Recommend: gsd:progress
+```
+Stop.
 
-## Recent Changes Analysis
+---
 
-For ECC recommendations, check recent file changes:
+## Gate 4: Plan Detection
+
 ```bash
-git diff --name-only HEAD~5..HEAD 2>/dev/null || git diff --name-only 2>/dev/null
+ls ${PHASE_DIR}/*-PLAN.md ${PHASE_DIR}/PLAN.md 2>/dev/null | head -1
 ```
 
-## Output Format
+Store result as `PLAN_FILE`. May be empty.
+
+---
+
+## Classification (delegated)
+
+If `PLAN_FILE` exists:
+
+1. Call `h:_classify` internally (ensures classification is stored)
+2. Read classification from CLEO:
+
+```bash
+FOCUS_ID=$(cleo focus show -q)
+cleo show "$FOCUS_ID" 2>/dev/null | grep -oP '\[WORK_CLASSIFICATION\] \K{[^}]*}'
+```
+
+Parse JSON fields: `automation_fit`, `ecc`, `type`, `scope`
+
+---
+
+## Output
+
+### Header
 
 ```
 === HARNESS ROUTE ===
 
-CLEO Focus: T### - [Task Title]
-AI-OPS Status: Present and validated
+CLEO Focus: [task id and title]
+AI-OPS: Present
+Phase: [phase name]
+Plan: [Yes/No] [path if yes]
+```
 
-State Analysis:
-  - Planning docs: [X of 4 present]
-  - Existing plan: [Yes/No] [plan file path if yes]
-  - Current phase: [Phase name/number or Unknown]
+### If no plan
+
+```
+=== GSD RECOMMENDATION ===
+Recommend: gsd:plan-phase
+```
+
+### If plan exists
+
+```
+=== WORK CLASSIFICATION ===
+Type: [type]
+Scope: [scope]
+Automation: [automation_fit]
+ECC: [ecc]
 
 === GSD RECOMMENDATION ===
-
-[Based on state, recommend ONE of:]
-  - `gsd:plan-phase` - No plan exists for current phase
-  - `gsd:execute-phase` - Plan exists, ready for execution
-  - `gsd:verify-work` - Execution complete, needs verification
-
-Reason: [Why this command is recommended]
-
-=== ECC RECOMMENDATION (Optional) ===
-
-Recent changes detected in: [file list summary]
-
-[If AI-OPS defines high-risk zones AND recent changes touch them:]
-  Recommend: h:ecc-security-review
-  Reason: Changes touch high-risk zones defined in AI-OPS
-
-[Otherwise:]
-  Recommend: h:ecc-code-review
-  Reason: Standard review for recent changes
+Recommend: gsd:execute-phase
 ```
+
+Then branch on `automation_fit`:
+
+#### automation_fit = forbidden
+
+```
+=== AUTOMATION ===
+RALPH: Not available for this work type
+```
+
+Do not mention h:ralph-init or h:ralph-run.
+
+#### automation_fit = discouraged
+
+```
+=== AUTOMATION ===
+RALPH: Available with caution
+  h:ralph-init [slug] (if bounded subtask identified)
+```
+
+#### automation_fit = allowed
+
+```
+=== AUTOMATION ===
+RALPH: Recommended
+  h:ralph-init [slug]
+  h:ralph-run (after bundle created)
+```
+
+Then branch on `ecc`:
+
+#### ecc = suggested
+
+```
+=== ECC ===
+Recommend: h:ecc-security-review or h:ecc-code-review
+```
+
+#### ecc = optional
+
+```
+=== ECC ===
+Optional: h:ecc-code-review
+```
+
+#### ecc = unnecessary
+
+Do not print ECC section.
+
+---
 
 ## Rules
 
-1. **Never execute GSD commands** - Only recommend them
-2. **Never bypass AI-OPS** - If missing, block and require it
-3. **Always require CLEO focus** - No routing without active task
-4. **Be specific** - Include exact command strings for user to copy/run
-
-## Important
-
-This is the coordination hub. It does not act; it advises. The user executes.
+1. Never execute GSD commands
+2. Never bypass AI-OPS
+3. Never re-classify if classification exists
+4. Never explain classification logic
+5. If automation_fit=forbidden, RALPH commands are invisible

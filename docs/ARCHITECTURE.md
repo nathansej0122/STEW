@@ -138,6 +138,7 @@ coordination-overlay-kit/
 │   ├── status.md
 │   ├── focus.md
 │   ├── route.md
+│   ├── _classify.md          # Internal: work classification helper
 │   ├── ecc-code-review.md
 │   ├── ecc-security-review.md
 │   ├── ecc-doc-update.md
@@ -220,6 +221,52 @@ The shim enforces:
 3. Iteration limit
 4. Results copied back for review
 5. Diff shown after completion
+
+## Governed Orchestration
+
+Classification-first layer determining ECC/RALPH availability.
+
+### Automation Intent is Declared in Plans
+
+Each phase plan includes an explicit governance block:
+
+```yaml
+automation:
+  type: conceptual | mechanical | mixed
+  scope: bounded | unbounded
+  ralph: allowed | discouraged | forbidden
+  ecc: suggested | optional | unnecessary
+```
+
+This is governance metadata, not prose. When present, no heuristics are used.
+
+Plans without this block are classified once automatically using fallback heuristics, then persisted. The harness never guesses twice.
+
+### How It Works
+
+1. **Classification runs once** - `h:_classify` parses explicit block or infers once
+2. **CLEO stores decisions** - `[WORK_CLASSIFICATION] {json}` in task notes
+3. **Routing reads only** - `h:route` branches on persisted values, never re-reasons
+
+### Persisted Object
+
+```json
+{"type":"...","scope":"...","automation_fit":"...","ecc":"...","plan_hash":"...","source":"explicit|inferred","decided_at":"..."}
+```
+
+### Routing Behavior
+
+| automation_fit | RALPH |
+|----------------|-------|
+| forbidden | Not shown |
+| discouraged | Available with caution |
+| allowed | Recommended |
+
+| ecc | ECC |
+|-----|-----|
+| suggested | Recommend |
+| optional | Mention |
+| unnecessary | Silent |
 
 ## Extension Points
 
