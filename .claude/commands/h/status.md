@@ -90,7 +90,7 @@ If `PLANNING_CONTRACT: MISSING` appears in output, show this block message and s
 
 Missing required planning contract.
 
-To create the missing files now, run: h:bootstrap
+Run h:bootstrap to create missing files OR h:sync-planning to populate .continue-here.md from STATE.md.
 
 Or create them manually using templates below, then rerun h:status.
 

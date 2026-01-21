@@ -105,6 +105,50 @@ Next action: <one-line next step>
 
 ---
 
+## h:sync-planning
+
+### Purpose
+
+Auto-populates `.planning/.continue-here.md` from `.planning/STATE.md`.
+
+Eliminates manual editing of `.continue-here.md` by deriving values from repo-authored state.
+
+### What it does
+
+- Requires `.planning/STATE.md` (blocks if missing)
+- Extracts pointer from STATE.md (`Resume file:`, `Pointer:`, or `Phase Directory:`)
+- Extracts status/why from `Status:` line
+- Extracts next action from `Next Action:` line
+- Writes `.planning/.continue-here.md` with derived values
+
+### Extraction Logic
+
+**CURRENT_POINTER** (priority order):
+1. `Resume file: <path>`
+2. `Pointer: <path>`
+3. `Phase Directory: <dir>` - resolves to `<dir>/PLAN.md` or first `*-PLAN.md`
+
+**WHY**: From `Status:` line, or fallback: "Derived from STATE.md current phase pointer"
+
+**NEXT_ACTION**: From `Next Action:` line, or fallback: "Continue from current plan file"
+
+### Overwrite Policy
+
+| Condition | Behavior |
+|-----------|----------|
+| File does not exist | Create |
+| File contains placeholders (`<path to`, `<one-line`, `TODO`) | Overwrite |
+| `STEW_SYNC_PLANNING_FORCE=1` | Force overwrite |
+| Otherwise | Skip (preserves user edits) |
+
+### When to use
+
+- After editing `.planning/STATE.md`
+- After `h:bootstrap` creates template files
+- When `h:status` shows placeholder content in `.continue-here.md`
+
+---
+
 ## h:focus
 
 ### Purpose

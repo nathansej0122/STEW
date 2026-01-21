@@ -52,7 +52,7 @@ STEW is intentionally strict.
 
 The planning contract is the only hard gate. CLEO is optional.
 
-If the planning contract is missing, run `h:bootstrap` to create the required files.
+If the planning contract is missing, run `h:bootstrap` to create the required files, then `h:sync-planning` to auto-populate `.continue-here.md` from `STATE.md`.
 
 For commits, use `h:commit` with explicit mode-based staging (never `git add .`).
 
