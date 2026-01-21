@@ -1,144 +1,130 @@
 ---
 name: h:focus
-description: Enforce CLEO as SST for active task; guide user to set focus if missing
+description: Show current planning focus from .continue-here.md and STATE.md
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
+<!-- FENCE CHECK: If output appears garbled, verify this file has balanced markdown fences. -->
+<!-- Each "Run:" section must contain exactly ONE fenced bash block. -->
+
 # Harness Focus Management
 
-You are enforcing the rule: **CLEO is the Single Source of Truth (SST) for the active task.**
+You are displaying the **current planning focus** from the planning contract.
 
-**CLEO project state is EXTERNAL to repos.** CLEO state lives in a directory specified by
-`CLEO_PROJECT_DIR`, not in the project repository. Project repos must NOT contain `.cleo/`.
+## Run: Consolidated Focus Check
 
-## Check Current Focus
+Execute this single Bash block to gather all focus information:
 
-Run:
 ```bash
-# CLEO requires CLEO_PROJECT_DIR to be set (external state directory)
-if [ -z "${CLEO_PROJECT_DIR:-}" ]; then
-  echo "CLEO_NOT_CONFIGURED"
-else
-  # Resolve CLEO binary
-  if [ -n "${CLEO_BIN:-}" ]; then
-    CLEO_CMD="$CLEO_BIN"
-  elif command -v cleo >/dev/null 2>&1; then
-    CLEO_CMD="cleo"
-  else
-    echo "CLEO_BINARY_NOT_FOUND"
-    exit 0
-  fi
+# --- Gate 0: Planning Contract ---
+MISSING=""
+[ ! -f ".planning/STATE.md" ] && MISSING="$MISSING .planning/STATE.md"
+[ ! -f ".planning/.continue-here.md" ] && MISSING="$MISSING .planning/.continue-here.md"
 
-  # Run CLEO from the external project state directory
-  if [ -f "$CLEO_PROJECT_DIR/.cleo/todo.json" ]; then
-    (cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show 2>/dev/null) || echo "CLEO_FOCUS_ERROR"
-  else
-    echo "CLEO_NOT_INITIALIZED"
-  fi
+if [ -n "$MISSING" ]; then
+  echo "PLANNING_CONTRACT: MISSING$MISSING"
+  exit 0
+fi
+echo "PLANNING_CONTRACT: OK"
+
+# --- Read .continue-here.md ---
+echo ""
+echo "=== .planning/.continue-here.md ==="
+cat .planning/.continue-here.md
+
+# --- Read STATE.md ---
+echo ""
+echo "=== .planning/STATE.md ==="
+cat .planning/STATE.md
+
+# --- Extract pointer ---
+echo ""
+POINTER=$(grep -E "^Current pointer:" .planning/.continue-here.md | sed 's/Current pointer: *//')
+echo "EXTRACTED_POINTER: $POINTER"
+
+# --- Check if pointer file exists ---
+if [ -n "$POINTER" ] && [ ! -f "$POINTER" ]; then
+  echo "POINTER_FILE_EXISTS: NO"
+else
+  echo "POINTER_FILE_EXISTS: YES"
 fi
 ```
 
-## If CLEO Not Configured
+## Interpretation
 
-Output:
+**If `PLANNING_CONTRACT: MISSING`** - Show block message and stop:
+
+```
+=== HARNESS FOCUS - BLOCKED ===
+
+Missing required planning contract. Create them using templates below, then rerun h:focus.
+
+Template: .planning/STATE.md
+---
+Current Work:
+  Pointer: <path to current plan doc or phase directory>
+  Status: <one-line status>
+
+Next Action:
+  <one-line next step>
+---
+
+Template: .planning/.continue-here.md
+---
+Current pointer: <path to plan doc to resume>
+Why: <one-line context>
+Next action: <one-line next step>
+---
+
+See GREENFIELD.md or BROWNFIELD.md for full setup instructions.
+```
+
+**If `POINTER_FILE_EXISTS: NO`** - Show warning about missing referenced file.
+
+## Output Format
+
 ```
 === HARNESS FOCUS ===
 
-CLEO not configured.
+Current Pointer: [extracted path from .continue-here.md]
+Why: [extracted context]
+Next Action: [extracted next step]
 
-CLEO project state is EXTERNAL to project repositories.
-To configure CLEO for this project:
+=== STATE.md SUMMARY ===
+[Current Work section from STATE.md]
 
-  export CLEO_PROJECT_DIR=~/tooling/native/cleo/projects/<your-project>
+=== RECOMMENDED FILE TO OPEN ===
+[The path from Current Pointer - this is where work should resume]
 
-The directory must contain initialized CLEO state (.cleo/todo.json).
-
-NOTE: Do NOT run `cleo init` inside the project repository.
+=== NEXT COMMAND ===
+To proceed with routing: h:route
 ```
 
-## If CLEO Binary Not Found
+## If Pointer File Missing
 
-Output:
+If the pointer references a file that doesn't exist:
+
 ```
-=== HARNESS FOCUS ===
+=== HARNESS FOCUS - WARNING ===
 
-ERROR: CLEO binary not available.
+Current Pointer: [path]
+WARNING: Referenced file does not exist.
 
-To configure CLEO binary:
-  - Add cleo to your PATH
-  - Or set CLEO_BIN to point to the cleo binary
+Either:
+1. Create the referenced plan document
+2. Update .continue-here.md to point to an existing file
 
-CLEO is required for task coordination.
-```
-
-## If CLEO Not Initialized
-
-Output:
-```
-=== HARNESS FOCUS ===
-
-CLEO project state not initialized.
-
-The directory $CLEO_PROJECT_DIR does not contain CLEO state.
-
-To initialize (run from the EXTERNAL state directory, NOT the project repo):
-  cd $CLEO_PROJECT_DIR
-  cleo init
-
-NOTE: Do NOT run `cleo init` inside the project repository.
-```
-
-## If No Focused Task
-
-Output:
-```
-=== HARNESS FOCUS ===
-
-No task currently focused.
-
-To set a focused task (from CLEO_PROJECT_DIR):
-  1. (Optional) List available tasks:
-     (cd $CLEO_PROJECT_DIR && cleo list)
-
-  2. Set focus on a task:
-     (cd $CLEO_PROJECT_DIR && cleo focus set T###)
-
-The harness requires a focused CLEO task before routing to GSD execution.
-```
-
-## If Focused Task Exists
-
-Output:
-```
-=== HARNESS FOCUS ===
-
-Active Task: T### - [Task Title]
-Status: [Task Status from CLEO]
-
-You are focused. The harness recognizes this as the current work item.
-
-=== OPTIONAL GUIDANCE ===
-
-For next-step suggestions from CLEO (run from CLEO_PROJECT_DIR):
-  (cd $CLEO_PROJECT_DIR && cleo next --explain)
-
-To proceed with GSD coordination:
-  h:route
-
-To change focus (run from CLEO_PROJECT_DIR):
-  (cd $CLEO_PROJECT_DIR && cleo focus set T###)
+Then rerun h:focus.
 ```
 
 ## Rules
 
-1. **CLEO is SST**: The focused task in CLEO determines what work is being done.
-2. **No overrides**: The harness does not set focus itself; it guides the user.
-3. **Read-only**: This command only reads state; it does not modify CLEO.
-4. **External state**: CLEO project state lives in `$CLEO_PROJECT_DIR`, not in the project repo.
+1. **Planning contract is SST**: The `.continue-here.md` file determines current work focus.
+2. **No modifications**: This command only reads state; it does not modify files.
+3. **CLEO is optional**: This command does not require or check CLEO.
 
 ## Important
 
-- Never run `cleo focus set` automatically
-- Never run GSD commands
-- Only provide recommendations for the user to execute
-- **NEVER recommend `cleo init` inside the project repository**
+- This command replaces CLEO-based focus for STEW routing.
+- The planning contract (STATE.md + .continue-here.md) is the single source of truth.
+- Always recommend opening the file referenced in Current Pointer.

@@ -1,70 +1,114 @@
 ---
 name: h:status
-description: Read-only overview of current coordination state (CLEO focus, git status, AI-OPS)
+description: Read-only overview of current coordination state (planning contract, git status, optional CLEO)
 allowed-tools: Read, Grep, Glob, Bash
 ---
+
+<!-- FENCE CHECK: If output appears garbled, verify this file has balanced markdown fences. -->
+<!-- Each "Run:" section must contain exactly ONE fenced bash block. -->
 
 # Harness Status Check
 
 You are performing a read-only status check for the coordination overlay.
 
-## Required Checks
+## Run: Consolidated Status Check
 
-### 1. CLEO Focus Status
-
-**CLEO project state is EXTERNAL to repos.** CLEO state lives in a directory specified by
-`CLEO_PROJECT_DIR`, not in the project repository. Project repos must NOT contain `.cleo/`.
-
-Run the following to get current focused task:
+Execute this single Bash block to gather all status information:
 
 ```bash
-# CLEO requires CLEO_PROJECT_DIR to be set (external state directory)
-if [ -z "${CLEO_PROJECT_DIR:-}" ]; then
-  echo "CLEO_NOT_CONFIGURED"
+# --- Planning Contract Check ---
+MISSING=""
+[ ! -f ".planning/STATE.md" ] && MISSING="$MISSING .planning/STATE.md"
+[ ! -f ".planning/.continue-here.md" ] && MISSING="$MISSING .planning/.continue-here.md"
+
+if [ -n "$MISSING" ]; then
+  echo "PLANNING_CONTRACT: MISSING$MISSING"
 else
-  # Resolve CLEO binary
+  echo "PLANNING_CONTRACT: OK"
+fi
+
+# --- Planning Focus ---
+echo ""
+echo "CONTINUE_HERE_CONTENTS:"
+if [ -f ".planning/.continue-here.md" ]; then
+  cat ".planning/.continue-here.md"
+else
+  echo "(file missing)"
+fi
+
+# --- Git Status ---
+echo ""
+echo "GIT_BRANCH: $(git branch --show-current 2>/dev/null || echo 'unknown')"
+PORCELAIN=$(git status --porcelain 2>/dev/null)
+if [ -z "$PORCELAIN" ]; then
+  echo "GIT_STATUS: Clean"
+else
+  echo "GIT_STATUS: $(echo "$PORCELAIN" | wc -l | tr -d ' ') uncommitted changes"
+fi
+
+# --- AI-OPS Documents ---
+echo ""
+[ -f ".planning/AI-OPS.md" ] && echo "AI_OPS_MD: Present - READ REQUIRED" || echo "AI_OPS_MD: Missing"
+[ -f ".planning/AI-OPS-KNOWLEDGE.md" ] && echo "AI_OPS_KNOWLEDGE_MD: Present" || echo "AI_OPS_KNOWLEDGE_MD: Missing"
+[ -f ".planning/LOCKED_BEHAVIOR_CANDIDATES.md" ] && echo "LOCKED_BEHAVIOR_MD: Present" || echo "LOCKED_BEHAVIOR_MD: Missing"
+
+# --- Planning Infrastructure ---
+echo ""
+[ -f ".planning/STATE.md" ] && echo "STATE_MD: Present" || echo "STATE_MD: Missing"
+[ -f ".planning/.continue-here.md" ] && echo "CONTINUE_HERE_MD: Present" || echo "CONTINUE_HERE_MD: Missing"
+[ -f ".planning/ROADMAP.md" ] && echo "ROADMAP_MD: Present" || echo "ROADMAP_MD: Missing"
+[ -f ".planning/PROJECT.md" ] && echo "PROJECT_MD: Present" || echo "PROJECT_MD: Missing"
+
+# --- CLEO Status (Optional) ---
+echo ""
+if [ -n "${CLEO_PROJECT_DIR:-}" ]; then
   if [ -n "${CLEO_BIN:-}" ]; then
     CLEO_CMD="$CLEO_BIN"
   elif command -v cleo >/dev/null 2>&1; then
     CLEO_CMD="cleo"
   else
-    echo "CLEO_BINARY_NOT_FOUND"
+    echo "CLEO: Binary not found"
     exit 0
   fi
-
-  # Run CLEO from the external project state directory
   if [ -f "$CLEO_PROJECT_DIR/.cleo/todo.json" ]; then
-    (cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show 2>/dev/null) || echo "CLEO_FOCUS_ERROR"
+    CLEO_OUT=$( (cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show 2>/dev/null) || echo "FOCUS_ERROR")
+    echo "CLEO: $CLEO_OUT"
   else
-    echo "CLEO_NOT_INITIALIZED"
+    echo "CLEO: Not initialized"
   fi
+else
+  echo "CLEO: Not configured"
 fi
 ```
 
-### 2. Git Repository Status
+## Interpretation
 
-```bash
-git status --porcelain
+If `PLANNING_CONTRACT: MISSING` appears in output, show this block message and stop:
+
 ```
+=== HARNESS STATUS - BLOCKED ===
 
-Report:
-- Clean tree vs pending changes
-- Current branch name
+Missing required planning contract. Create them using templates below, then rerun h:status.
 
-### 3. AI-OPS Document Presence
+Template: .planning/STATE.md
+---
+Current Work:
+  Pointer: <path to current plan doc or phase directory>
+  Status: <one-line status>
 
-Check for these files in the target repo:
-- `.planning/AI-OPS.md` - If exists, user MUST read before any action
-- `.planning/AI-OPS-KNOWLEDGE.md` - Supplemental knowledge base
-- `.planning/LOCKED_BEHAVIOR_CANDIDATES.md` - Authoritative for locked behaviors
+Next Action:
+  <one-line next step>
+---
 
-### 4. Planning Infrastructure
+Template: .planning/.continue-here.md
+---
+Current pointer: <path to plan doc to resume>
+Why: <one-line context>
+Next action: <one-line next step>
+---
 
-Check for:
-- `.planning/STATE.md`
-- `.planning/ROADMAP.md`
-- `.planning/PROJECT.md`
-- `.planning/config.json`
+See GREENFIELD.md or BROWNFIELD.md for full setup instructions.
+```
 
 ## Output Format
 
@@ -73,48 +117,31 @@ Provide a summary in this exact structure:
 ```
 === HARNESS STATUS ===
 
-CLEO: [Status line - see below]
+Planning Contract: [OK] or [MISSING - see above]
+Planning Focus: [pointer from .continue-here.md]
 Git Status: [Clean] or [Uncommitted changes: X files]
 Branch: [branch-name]
 
-AI-OPS Documents:
+AI-OPS Documents (optional):
   - AI-OPS.md: [Present - READ REQUIRED] or [Missing]
-  - LOCKED_BEHAVIOR_CANDIDATES.md: [Present - authoritative] or [Missing]
+  - LOCKED_BEHAVIOR_CANDIDATES.md: [Present] or [Missing]
 
-Planning Docs: [X of 4 present]
+CLEO (optional): [Status or "Not configured"]
 
 === RECOMMENDED NEXT COMMAND ===
 [Recommendation based on state]
 ```
 
-### CLEO Status Line Values
-
-Based on the check output, report ONE of these:
-
-| Output | Status Line |
-|--------|-------------|
-| `CLEO_NOT_CONFIGURED` | Not configured (set CLEO_PROJECT_DIR) |
-| `CLEO_BINARY_NOT_FOUND` | Binary not found (add cleo to PATH or set CLEO_BIN) |
-| `CLEO_NOT_INITIALIZED` | Project state not initialized in $CLEO_PROJECT_DIR |
-| `CLEO_FOCUS_ERROR` | Error reading focus |
-| No task focused | None - no focused task |
-| Task focused | T### - Task Title |
-
-**IMPORTANT:** Never suggest running `cleo init` inside the project repository.
-If CLEO_PROJECT_DIR is not set or not initialized, that is a configuration issue
-to be resolved externally, not inside the repo.
-
 ## Recommendation Logic
 
-1. If CLEO not configured: recommend setting `CLEO_PROJECT_DIR` (do NOT recommend `cleo init` in repo)
-2. If CLEO configured but not initialized: recommend initializing CLEO in `$CLEO_PROJECT_DIR` (external)
-3. If no CLEO focus: recommend `h:focus`
-4. If CLEO focus exists but AI-OPS missing: recommend onboarding/reading docs
-5. If CLEO focus + AI-OPS present: recommend `h:route`
+1. If planning contract missing: show block message with templates (do NOT proceed)
+2. If planning contract OK: recommend `h:focus` to see current work pointer
+3. If AI-OPS.md present: remind user it must be read before work
+4. If ready to work: recommend `h:route`
 
 ## Important
 
 - This is READ-ONLY. Do not modify any files.
 - Do not execute GSD commands; only check status.
+- Planning contract is REQUIRED; CLEO is OPTIONAL.
 - If AI-OPS.md exists, emphasize it must be read before proceeding.
-- **NEVER recommend `cleo init` inside the project repository.**

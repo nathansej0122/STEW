@@ -1,169 +1,128 @@
 ---
 name: h:route
-description: Coordination router - determine next GSD/ECC action based on state (recommendation only)
+description: Coordination router - determine next action based on planning contract state (recommendation only)
 allowed-tools: Bash, Skill
 ---
+
+<!-- FENCE CHECK: If output appears garbled, verify this file has balanced markdown fences. -->
+<!-- Each "Run:" section must contain exactly ONE fenced bash block. -->
 
 # Harness Route Command
 
 Coordination router. Reads state, recommends actions. **Never executes GSD. Never re-reasons. Uses persisted classification only.**
 
-**CLEO project state is EXTERNAL to repos.** All CLEO commands must run from `$CLEO_PROJECT_DIR`.
+**Planning contract is REQUIRED. CLEO is OPTIONAL.**
 
 ---
 
-## Gate 1: CLEO Focus
+## Run: Consolidated State Check
+
+Execute this single Bash block to gather all routing state:
 
 ```bash
-# CLEO requires CLEO_PROJECT_DIR to be set (external state directory)
-if [ -z "${CLEO_PROJECT_DIR:-}" ]; then
-    echo "CLEO_NOT_CONFIGURED"
-else
-  # Resolve CLEO binary
-  if [ -n "${CLEO_BIN:-}" ]; then
-    CLEO_CMD="$CLEO_BIN"
-  elif command -v cleo >/dev/null 2>&1; then
-    CLEO_CMD="cleo"
-  else
-    echo "CLEO_BINARY_NOT_FOUND"
-    exit 0
-  fi
+# --- Gate 0: Planning Contract ---
+MISSING=""
+[ ! -f ".planning/STATE.md" ] && MISSING="$MISSING .planning/STATE.md"
+[ ! -f ".planning/.continue-here.md" ] && MISSING="$MISSING .planning/.continue-here.md"
 
-  # Check if CLEO is initialized
-  if [ ! -f "$CLEO_PROJECT_DIR/.cleo/todo.json" ]; then
-    echo "CLEO_NOT_INITIALIZED"
-    exit 0
-  fi
-
-  # Run CLEO from the external project state directory
-  FOCUS_OUTPUT=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show 2>/dev/null)
-  if [ -z "$FOCUS_OUTPUT" ] || echo "$FOCUS_OUTPUT" | grep -q "No task focused"; then
-      echo "NO_FOCUS"
-  else
-      echo "FOCUS_OK"
-      echo "$FOCUS_OUTPUT"
-  fi
+if [ -n "$MISSING" ]; then
+  echo "PLANNING_CONTRACT: MISSING$MISSING"
+  exit 0
 fi
-```
+echo "PLANNING_CONTRACT: OK"
 
-If `CLEO_NOT_CONFIGURED`:
-```
-=== HARNESS ROUTE - BLOCKED ===
-CLEO not configured. Set CLEO_PROJECT_DIR to your external CLEO state directory.
-NOTE: Do NOT run `cleo init` inside the project repository.
-```
-Stop.
-
-If `CLEO_NOT_INITIALIZED`:
-```
-=== HARNESS ROUTE - BLOCKED ===
-CLEO project state not initialized in $CLEO_PROJECT_DIR.
-Initialize CLEO in that directory (not in the project repo).
-```
-Stop.
-
-If `NO_FOCUS`:
-```
-=== HARNESS ROUTE - BLOCKED ===
-No CLEO focus set.
-Run: h:focus
-```
-Stop.
-
----
-
-## Gate 2: AI-OPS
-
-```bash
-if [ -f ".planning/AI-OPS.md" ]; then
-    echo "AI_OPS_PRESENT"
+# --- Gate 1: Planning Focus ---
+CURRENT_POINTER=$(grep -E "^Current pointer:" .planning/.continue-here.md 2>/dev/null | sed 's/Current pointer: *//')
+if [ -z "$CURRENT_POINTER" ]; then
+  echo "POINTER: NONE"
 else
-    echo "AI_OPS_MISSING"
-fi
-```
-
-If `AI_OPS_MISSING`:
-```
-=== HARNESS ROUTE - BLOCKED ===
-AI-OPS.md not found.
-Run: Create .planning/AI-OPS.md
-```
-Stop.
-
----
-
-## Gate 3: Phase Directory
-
-```bash
-PHASE_DIR=$(grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
-if [ -z "$PHASE_DIR" ]; then
-    echo "NO_PHASE"
-else
-    echo "PHASE_DIR=$PHASE_DIR"
-fi
-```
-
-If `NO_PHASE`:
-```
-=== HARNESS ROUTE - BLOCKED ===
-Unable to determine current phase from STATE.md.
-Recommend: gsd:progress
-```
-Stop.
-
----
-
-## Gate 4: Plan Detection
-
-```bash
-PHASE_DIR=$(grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
-PLAN_FILE=$(ls "$PHASE_DIR"/*-PLAN.md "$PHASE_DIR"/PLAN.md 2>/dev/null | sort | head -1)
-if [ -z "$PLAN_FILE" ]; then
-    echo "NO_PLAN"
-else
-    echo "PLAN_FILE=$PLAN_FILE"
-fi
-```
-
----
-
-## Classification (if plan exists)
-
-If `PLAN_FILE` exists, call `h:_classify` via Skill tool, then read persisted classification:
-
-```bash
-# Resolve CLEO binary and run from external state directory
-if [ -n "${CLEO_BIN:-}" ]; then
-  CLEO_CMD="$CLEO_BIN"
-else
-  CLEO_CMD="cleo"
+  echo "POINTER: $CURRENT_POINTER"
 fi
 
-FOCUS_ID=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show -q 2>/dev/null)
-TASK_OUTPUT=$(cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" show "$FOCUS_ID" 2>/dev/null)
+# --- Gate 2: AI-OPS ---
+[ -f ".planning/AI-OPS.md" ] && echo "AI_OPS: Present - READ REQUIRED" || echo "AI_OPS: Missing"
 
-# Extract and decode base64-encoded classification (last entry wins)
-python3 << 'PYEOF'
-import sys, re, json, base64
+# --- Gate 3: Phase/Plan Detection ---
+PHASE_DIR=$(grep -oP '(Phase Directory:|Current Phase:|Pointer:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
 
-text = """$TASK_OUTPUT"""
-matches = re.findall(r'\[WORK_CLASSIFICATION_B64\]\s*([A-Za-z0-9+/=]+)', text)
-if matches:
-    candidate = matches[-1]  # last entry wins
-    try:
-        decoded = base64.b64decode(candidate).decode('utf-8')
-        obj = json.loads(decoded)
-        print(f"TYPE={obj.get('type', 'unknown')}")
-        print(f"SCOPE={obj.get('scope', 'unknown')}")
-        print(f"AUTOMATION_FIT={obj.get('automation_fit', 'unknown')}")
-        print(f"ECC={obj.get('ecc', 'unknown')}")
-        print(f"SOURCE={obj.get('source', 'unknown')}")
-    except:
-        print("CLASSIFICATION_PARSE_ERROR")
-else:
-    print("NO_CLASSIFICATION_FOUND")
+PLAN_FILE=""
+if [ -n "$PHASE_DIR" ] && [ -d "$PHASE_DIR" ]; then
+  PLAN_FILE=$(ls "$PHASE_DIR"/*-PLAN.md "$PHASE_DIR"/PLAN.md 2>/dev/null | sort | head -1)
+fi
+if [ -z "$PLAN_FILE" ] && [ -n "$CURRENT_POINTER" ]; then
+  POINTER_DIR=$(dirname "$CURRENT_POINTER" 2>/dev/null)
+  PLAN_FILE=$(ls "$POINTER_DIR"/*-PLAN.md "$POINTER_DIR"/PLAN.md 2>/dev/null | sort | head -1)
+fi
+
+[ -n "$PHASE_DIR" ] && echo "PHASE_DIR: $PHASE_DIR" || echo "PHASE_DIR: N/A"
+[ -n "$PLAN_FILE" ] && echo "PLAN_FILE: $PLAN_FILE" || echo "PLAN_FILE: NONE"
+
+# --- Classification (from persisted state) ---
+if [ -f ".planning/HARNESS_STATE.json" ]; then
+  python3 << 'PYEOF'
+import json
+try:
+    with open('.planning/HARNESS_STATE.json', 'r') as f:
+        state = json.load(f)
+    c = state.get('classification', {})
+    if c:
+        print(f"CLASS_TYPE: {c.get('type', 'unknown')}")
+        print(f"CLASS_SCOPE: {c.get('scope', 'unknown')}")
+        print(f"CLASS_AUTOMATION: {c.get('automation_fit', 'unknown')}")
+        print(f"CLASS_ECC: {c.get('ecc', 'unknown')}")
+        print(f"CLASS_SOURCE: {c.get('source', 'unknown')}")
+    else:
+        print("CLASSIFICATION: NONE")
+except:
+    print("CLASSIFICATION: NONE")
 PYEOF
+else
+  echo "CLASSIFICATION: NONE"
+fi
 ```
+
+## Interpretation
+
+**If `PLANNING_CONTRACT: MISSING`** - Show block message and stop:
+
+```
+=== HARNESS ROUTE - BLOCKED ===
+
+Missing required planning contract. Create them using templates below, then rerun h:route.
+
+Template: .planning/STATE.md
+---
+Current Work:
+  Pointer: <path to current plan doc or phase directory>
+  Status: <one-line status>
+
+Next Action:
+  <one-line next step>
+---
+
+Template: .planning/.continue-here.md
+---
+Current pointer: <path to plan doc to resume>
+Why: <one-line context>
+Next action: <one-line next step>
+---
+
+See GREENFIELD.md or BROWNFIELD.md for full setup instructions.
+```
+
+**If `POINTER: NONE`** - Show block message and stop:
+
+```
+=== HARNESS ROUTE - BLOCKED ===
+No current pointer found in .continue-here.md.
+Run: h:focus to check planning state.
+```
+
+**If `AI_OPS: Present`** - Remind user it must be read before work (do NOT block).
+
+**If `PLAN_FILE: NONE`** - No plan exists, recommend creating one.
+
+**If `CLASSIFICATION: NONE`** - Call `h:_classify` via Skill tool to populate classification.
 
 ---
 
@@ -176,17 +135,20 @@ Build output strictly from parsed values. No narrative reasoning.
 ```
 === HARNESS ROUTE ===
 
-CLEO Focus: [task id and title from Gate 1]
-AI-OPS: Present
-Phase: [PHASE_DIR value]
+Planning Contract: OK
+Current Pointer: [from .continue-here.md]
+AI-OPS: [Present - READ REQUIRED] or [Not present]
+Phase: [PHASE_DIR value or "N/A"]
 Plan: [Yes/No] [PLAN_FILE path if yes]
+CLEO (optional): [Status if configured, or "Not configured"]
 ```
 
 ### If no plan
 
 ```
-=== GSD RECOMMENDATION ===
-Recommend: gsd:plan-phase
+=== RECOMMENDATION ===
+No plan file found. Create a plan document in the phase directory.
+Recommend: Create PLAN.md or use gsd:plan-phase
 ```
 
 Stop.
@@ -201,8 +163,8 @@ Automation: [AUTOMATION_FIT value]
 ECC: [ECC value]
 Source: [SOURCE value]
 
-=== GSD RECOMMENDATION ===
-Recommend: gsd:execute-phase
+=== RECOMMENDATION ===
+Recommend: Execute the plan (gsd:execute-phase or manual execution)
 ```
 
 ### Automation Section (conditional on AUTOMATION_FIT)
@@ -247,7 +209,7 @@ Do not print ECC section.
 ## Rules
 
 1. Never execute GSD commands
-2. Never bypass AI-OPS
+2. Planning contract is REQUIRED; CLEO is OPTIONAL
 3. Never classify inline - always call h:_classify and read persisted result
 4. Never explain classification logic
 5. If automation_fit=forbidden, RALPH commands are invisible (omit automation section entirely)
