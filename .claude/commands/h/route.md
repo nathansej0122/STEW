@@ -1,6 +1,6 @@
 ---
 name: h:route
-description: Coordination router - determine next action based on planning contract state (recommendation only)
+description: Coordination router - determine next action based on CLEO focus and STATE.md Pointer
 allowed-tools: Bash, Skill
 ---
 
@@ -11,7 +11,7 @@ allowed-tools: Bash, Skill
 
 Coordination router. Reads state, recommends actions. **Never executes GSD. Never re-reasons. Uses persisted classification only.**
 
-**Planning contract is REQUIRED. CLEO is OPTIONAL.**
+**CLEO focus is MANDATORY. STATE.md Pointer is REQUIRED.**
 
 ---
 
@@ -20,44 +20,87 @@ Coordination router. Reads state, recommends actions. **Never executes GSD. Neve
 Execute this single Bash block to gather all routing state:
 
 ```bash
-# --- Gate 0: Planning Contract ---
-MISSING=""
-[ ! -f ".planning/STATE.md" ] && MISSING="$MISSING .planning/STATE.md"
-[ ! -f ".planning/.continue-here.md" ] && MISSING="$MISSING .planning/.continue-here.md"
-
-if [ -n "$MISSING" ]; then
-  echo "PLANNING_CONTRACT: MISSING$MISSING"
-  exit 0
-fi
-echo "PLANNING_CONTRACT: OK"
-
-# --- Gate 1: Planning Focus ---
-CURRENT_POINTER=$(grep -E "^Current pointer:" .planning/.continue-here.md 2>/dev/null | sed 's/Current pointer: *//')
-if [ -z "$CURRENT_POINTER" ]; then
-  echo "POINTER: NONE"
+# === CLEO Auto-Discovery (MANDATORY) ===
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
+if [ -n "$REMOTE_URL" ]; then
+  PROJECT_KEY=$(basename "$REMOTE_URL" .git)
 else
-  echo "POINTER: $CURRENT_POINTER"
+  PROJECT_KEY=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+fi
+CLEO_STATE_DIR="$HOME/.cleo/projects/$PROJECT_KEY"
+
+# === Gate 0: CLEO Focus (MANDATORY) ===
+if command -v cleo >/dev/null 2>&1; then
+  CLEO_CMD="cleo"
+elif [ -n "${CLEO_BIN:-}" ] && [ -x "$CLEO_BIN" ]; then
+  CLEO_CMD="$CLEO_BIN"
+else
+  echo "CLEO_BINARY: NOT_FOUND"
+  exit 1
 fi
 
-# --- Gate 2: AI-OPS ---
+if [ ! -f "$CLEO_STATE_DIR/.cleo/todo.json" ]; then
+  echo "CLEO_INIT: NOT_INITIALIZED"
+  echo "CLEO_STATE_DIR: $CLEO_STATE_DIR"
+  exit 1
+fi
+
+CLEO_FOCUS=$( (cd "$CLEO_STATE_DIR" && "$CLEO_CMD" focus show --format json 2>/dev/null) || echo '{}')
+FOCUS_ID=$(echo "$CLEO_FOCUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('id',''))" 2>/dev/null || true)
+FOCUS_TITLE=$(echo "$CLEO_FOCUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('title',''))" 2>/dev/null || true)
+
+if [ -z "$FOCUS_ID" ]; then
+  echo "CLEO_FOCUS: NO_FOCUS"
+  echo "CLEO_STATE_DIR: $CLEO_STATE_DIR"
+  exit 1
+fi
+echo "CLEO_FOCUS: $FOCUS_ID - $FOCUS_TITLE"
+
+# === Gate 1: STATE.md and Pointer ===
+if [ ! -f ".planning/STATE.md" ]; then
+  echo "STATE_MD: MISSING"
+  exit 1
+fi
+
+POINTER=$(grep -E "^\s*Pointer:" .planning/STATE.md 2>/dev/null | head -1 | sed 's/^[[:space:]]*Pointer:[[:space:]]*//')
+if [ -z "$POINTER" ] || echo "$POINTER" | grep -q "^<"; then
+  echo "STATE_POINTER: MISSING_OR_PLACEHOLDER"
+  exit 1
+fi
+echo "STATE_POINTER: $POINTER"
+
+# === Gate 2: AI-OPS ===
 [ -f ".planning/AI-OPS.md" ] && echo "AI_OPS: Present - READ REQUIRED" || echo "AI_OPS: Missing"
 
-# --- Gate 3: Phase/Plan Detection ---
-PHASE_DIR=$(grep -oP '(Phase Directory:|Current Phase:|Pointer:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
-
+# === Gate 3: Phase/Plan Detection ===
+PHASE_DIR=""
 PLAN_FILE=""
-if [ -n "$PHASE_DIR" ] && [ -d "$PHASE_DIR" ]; then
-  PLAN_FILE=$(ls "$PHASE_DIR"/*-PLAN.md "$PHASE_DIR"/PLAN.md 2>/dev/null | sort | head -1)
+
+# If pointer is a directory, that's the phase dir
+if [ -d "$POINTER" ]; then
+  PHASE_DIR="$POINTER"
+elif [ -f "$POINTER" ]; then
+  PHASE_DIR=$(dirname "$POINTER")
 fi
-if [ -z "$PLAN_FILE" ] && [ -n "$CURRENT_POINTER" ]; then
-  POINTER_DIR=$(dirname "$CURRENT_POINTER" 2>/dev/null)
-  PLAN_FILE=$(ls "$POINTER_DIR"/*-PLAN.md "$POINTER_DIR"/PLAN.md 2>/dev/null | sort | head -1)
+
+# Find plan file
+if [ -n "$PHASE_DIR" ] && [ -d "$PHASE_DIR" ]; then
+  if [ -f "$PHASE_DIR/PLAN.md" ]; then
+    PLAN_FILE="$PHASE_DIR/PLAN.md"
+  else
+    PLAN_FILE=$(ls "$PHASE_DIR"/*-PLAN.md 2>/dev/null | sort | head -1)
+  fi
+fi
+
+# If pointer is itself a plan file
+if [ -z "$PLAN_FILE" ] && [ -f "$POINTER" ] && echo "$POINTER" | grep -qE 'PLAN\.md$'; then
+  PLAN_FILE="$POINTER"
 fi
 
 [ -n "$PHASE_DIR" ] && echo "PHASE_DIR: $PHASE_DIR" || echo "PHASE_DIR: N/A"
 [ -n "$PLAN_FILE" ] && echo "PLAN_FILE: $PLAN_FILE" || echo "PLAN_FILE: NONE"
 
-# --- Classification (from persisted state) ---
+# === Classification (from persisted state) ===
 if [ -f ".planning/HARNESS_STATE.json" ]; then
   python3 << 'PYEOF'
 import json
@@ -79,43 +122,83 @@ PYEOF
 else
   echo "CLASSIFICATION: NONE"
 fi
+
+# === .continue-here.md violation check ===
+if [ -f ".planning/.continue-here.md" ]; then
+  echo ""
+  echo "CONTINUE_HERE_VIOLATION: YES"
+fi
 ```
 
 ## Interpretation
 
-**If `PLANNING_CONTRACT: MISSING`** - Show block message and stop:
+**If `CLEO_BINARY: NOT_FOUND`** - Show block message and stop:
 
 ```
 === HARNESS ROUTE - BLOCKED ===
 
-Missing required planning contract. Create them using templates below, then rerun h:route.
+CLEO binary not found.
 
-Template: .planning/STATE.md
----
+CLEO is mandatory for STEW routing.
+
+Install CLEO: See https://github.com/kryptobaseddev/cleo
+```
+
+**If `CLEO_INIT: NOT_INITIALIZED`** - Show block message and stop:
+
+```
+=== HARNESS ROUTE - BLOCKED ===
+
+CLEO not initialized for this project.
+
+CLEO State Dir: [CLEO_STATE_DIR]
+
+To initialize:
+  mkdir -p "[CLEO_STATE_DIR]"
+  (cd "[CLEO_STATE_DIR]" && cleo init)
+
+Then set focus:
+  (cd "[CLEO_STATE_DIR]" && cleo add "Initial task" && cleo focus set T001)
+```
+
+**If `CLEO_FOCUS: NO_FOCUS`** - Show block message and stop:
+
+```
+=== HARNESS ROUTE - BLOCKED ===
+
+No CLEO focus set.
+
+CLEO focus is mandatory for STEW routing.
+
+Set focus:
+  (cd "[CLEO_STATE_DIR]" && cleo focus set <task-id>)
+```
+
+**If `STATE_MD: MISSING`** - Show block message and stop:
+
+```
+=== HARNESS ROUTE - BLOCKED ===
+
+Missing .planning/STATE.md
+
+Create it with this template:
+
 Current Work:
   Pointer: <path to current plan doc or phase directory>
   Status: <one-line status>
 
 Next Action:
   <one-line next step>
----
-
-Template: .planning/.continue-here.md
----
-Current pointer: <path to plan doc to resume>
-Why: <one-line context>
-Next action: <one-line next step>
----
-
-See GREENFIELD.md or BROWNFIELD.md for full setup instructions.
 ```
 
-**If `POINTER: NONE`** - Show block message and stop:
+**If `STATE_POINTER: MISSING_OR_PLACEHOLDER`** - Show block message and stop:
 
 ```
 === HARNESS ROUTE - BLOCKED ===
-No current pointer found in .continue-here.md.
-Run: h:focus to check planning state.
+
+STATE.md Pointer is missing or contains placeholder.
+
+Edit .planning/STATE.md and set the Pointer line to a real path.
 ```
 
 **If `AI_OPS: Present`** - Remind user it must be read before work (do NOT block).
@@ -123,6 +206,8 @@ Run: h:focus to check planning state.
 **If `PLAN_FILE: NONE`** - No plan exists, recommend creating one.
 
 **If `CLASSIFICATION: NONE`** - Call `h:_classify` via Skill tool to populate classification.
+
+**If `CONTINUE_HERE_VIOLATION: YES`** - Warn user to delete deprecated file.
 
 ---
 
@@ -135,12 +220,18 @@ Build output strictly from parsed values. No narrative reasoning.
 ```
 === HARNESS ROUTE ===
 
-Planning Contract: OK
-Current Pointer: [from .continue-here.md]
+CLEO Focus (mandatory): [FOCUS_ID] - [FOCUS_TITLE]
+STATE.md Pointer: [POINTER]
 AI-OPS: [Present - READ REQUIRED] or [Not present]
 Phase: [PHASE_DIR value or "N/A"]
 Plan: [Yes/No] [PLAN_FILE path if yes]
-CLEO (optional): [Status if configured, or "Not configured"]
+```
+
+### If .continue-here.md exists
+
+```
+WARNING: .planning/.continue-here.md exists but is deprecated.
+Delete it: rm .planning/.continue-here.md
 ```
 
 ### If no plan
@@ -209,9 +300,10 @@ Do not print ECC section.
 ## Rules
 
 1. Never execute GSD commands
-2. Planning contract is REQUIRED; CLEO is OPTIONAL
+2. CLEO focus is MANDATORY; STATE.md Pointer is REQUIRED
 3. Never classify inline - always call h:_classify and read persisted result
 4. Never explain classification logic
 5. If automation_fit=forbidden, RALPH commands are invisible (omit automation section entirely)
 6. If ecc=unnecessary, omit ECC section entirely
 7. Output values only - no narrative interpretation
+8. If .continue-here.md exists, warn user to delete it (deprecated)

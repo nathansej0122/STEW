@@ -8,27 +8,24 @@ allowed-tools: Bash
 
 **Not user-callable. Called by h:route only.**
 
-**Planning contract is REQUIRED. CLEO is OPTIONAL.**
+**CLEO focus is MANDATORY. STATE.md Pointer is REQUIRED.**
 
 Classification is stored in `.planning/HARNESS_STATE.json`.
 
-## Gate 0: Planning Contract (REQUIRED)
+## Gate 0: STATE.md (REQUIRED)
 
 ```bash
-MISSING=""
 if [ ! -f ".planning/STATE.md" ]; then
-  MISSING="$MISSING .planning/STATE.md"
-fi
-if [ ! -f ".planning/.continue-here.md" ]; then
-  MISSING="$MISSING .planning/.continue-here.md"
+  echo "STATE_MD_MISSING"
+  exit 1
 fi
 
-if [ -n "$MISSING" ]; then
-  echo "PLANNING_CONTRACT_MISSING:$MISSING"
+POINTER=$(grep -E "^\s*Pointer:" .planning/STATE.md 2>/dev/null | head -1 | sed 's/^[[:space:]]*Pointer:[[:space:]]*//')
+if [ -z "$POINTER" ] || echo "$POINTER" | grep -q "^<"; then
+  echo "STATE_POINTER_MISSING_OR_PLACEHOLDER"
   exit 1
-else
-  echo "PLANNING_CONTRACT_OK"
 fi
+echo "STATE_POINTER_OK: $POINTER"
 ```
 
 If blocked, do not proceed.
@@ -40,18 +37,33 @@ Run these Bash tool calls in sequence:
 ### Step 1: Determine phase directory and plan file
 
 ```bash
-# Try to extract phase from STATE.md
-PHASE_DIR=$(grep -oP '(Phase Directory:|Current Phase:|Pointer:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
+# Get pointer from STATE.md
+POINTER=$(grep -E "^\s*Pointer:" .planning/STATE.md 2>/dev/null | head -1 | sed 's/^[[:space:]]*Pointer:[[:space:]]*//')
 
-# If no phase dir, try current pointer
-if [ -z "$PHASE_DIR" ] || [ ! -d "$PHASE_DIR" ]; then
-    CURRENT_POINTER=$(grep -E "^Current pointer:" .planning/.continue-here.md 2>/dev/null | sed 's/Current pointer: *//')
-    PHASE_DIR=$(dirname "$CURRENT_POINTER" 2>/dev/null)
+PHASE_DIR=""
+PLAN_FILE=""
+
+# If pointer is a directory, that's the phase dir
+if [ -d "$POINTER" ]; then
+  PHASE_DIR="$POINTER"
+elif [ -f "$POINTER" ]; then
+  PHASE_DIR=$(dirname "$POINTER")
 fi
 
-if [ -z "$PHASE_DIR" ]; then echo "NO_PHASE"; exit 0; fi
+# Find plan file
+if [ -n "$PHASE_DIR" ] && [ -d "$PHASE_DIR" ]; then
+  if [ -f "$PHASE_DIR/PLAN.md" ]; then
+    PLAN_FILE="$PHASE_DIR/PLAN.md"
+  else
+    PLAN_FILE=$(ls "$PHASE_DIR"/*-PLAN.md 2>/dev/null | sort | head -1)
+  fi
+fi
 
-PLAN_FILE=$(ls "$PHASE_DIR"/*-PLAN.md "$PHASE_DIR"/PLAN.md 2>/dev/null | sort | head -1)
+# If pointer is itself a plan file
+if [ -z "$PLAN_FILE" ] && [ -f "$POINTER" ] && echo "$POINTER" | grep -qE 'PLAN\.md$'; then
+  PLAN_FILE="$POINTER"
+fi
+
 if [ -z "$PLAN_FILE" ]; then echo "NO_PLAN"; exit 0; fi
 echo "PHASE_DIR=$PHASE_DIR"
 echo "PLAN_FILE=$PLAN_FILE"
@@ -305,8 +317,8 @@ echo "CLASSIFICATION_STORED"
 ## Output Values
 
 The command outputs exactly one of:
-- `PLANNING_CONTRACT_MISSING` - Required planning files missing
-- `NO_PHASE` - No phase directory found
+- `STATE_MD_MISSING` - STATE.md file missing
+- `STATE_POINTER_MISSING_OR_PLACEHOLDER` - Pointer not set or is a placeholder
 - `NO_PLAN` - No plan file found
 - `CLASSIFICATION_CACHED` - Existing classification valid (plan unchanged)
 - `CLASSIFICATION_STORED` - New classification persisted

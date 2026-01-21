@@ -11,7 +11,7 @@ It is built for situations where AI workflows degrade over time:
 - runaway token usage
 - automation that becomes harder to undo than to do manually
 
-STEW does not try to make AI “faster.” It makes AI **predictable, inspectable, and cost-controlled** by moving intent and judgment into explicit state.
+STEW does not try to make AI "faster." It makes AI **predictable, inspectable, and cost-controlled** by moving intent and judgment into explicit state.
 
 ---
 
@@ -30,7 +30,7 @@ If you mainly want quick answers or one-off scripts, this will feel heavy.
 ## Who This Is Not For
 
 STEW is not a fit if you want:
-- an autonomous “agent” that just does work
+- an autonomous "agent" that just does work
 - a copilot-style chat workflow
 - maximum speed at the expense of reversibility
 - automation without governance
@@ -43,16 +43,15 @@ STEW is intentionally strict.
 
 | Tool | Status | What it owns |
 |---|---|---|
-| **Planning Contract** | **REQUIRED** | STATE.md + .continue-here.md |
+| **CLEO** | **MANDATORY** | Task identity (focus) |
 | **GSD (Get Shit Done)** | Required | Plans, phases, execution order |
 | **ECC** | Optional | Review agents (code, security, refactor, docs) |
 | **RALPH** | Optional | Bounded mechanical automation |
-| **CLEO** | **Optional** | Task identity (if configured) |
 | **STEW** | Required | Routing & governance |
 
-The planning contract is the only hard gate. CLEO is optional.
+**Planning contract**: STATE.md is required (provides work location via Pointer line).
 
-If the planning contract is missing, run `h:bootstrap` to create the required files, then `h:sync-planning` to auto-populate `.continue-here.md` from `STATE.md`.
+CLEO is mandatory. Commands hard-fail without CLEO focus.
 
 For commits, use `h:commit` with explicit mode-based staging (never `git add .`).
 
@@ -78,7 +77,9 @@ This turns expensive, repeated reasoning into cheap, persistent state.
 ```
 User
   ↓
-Planning Contract (focus: .continue-here.md)
+CLEO (focus: what task is active) [MANDATORY]
+  ↓
+STATE.md (pointer: where is the plan)
   ↓
 GSD (plans: what should happen)
   ↓
@@ -86,8 +87,6 @@ h:route (reads everything)
   ├─ recommends gsd:* commands
   ├─ may suggest h:ralph-* (only if allowed)
   └─ may suggest h:ecc-* (only if useful)
-
-Optional: CLEO (task tracking)
 ```
 
 ---
@@ -97,7 +96,7 @@ Optional: CLEO (task tracking)
 Read these in order:
 
 1. **INSTALL.md** — mandatory setup and prerequisites
-2. **CONCEPTS.md** — mental model and why this isn’t redundant
+2. **CONCEPTS.md** — mental model and why this isn't redundant
 3. **GREENFIELD.md** — starting a new project
 4. **BROWNFIELD.md** — integrating into an existing project
 5. **COMMANDS.md** — all `h:*` commands explained
@@ -121,7 +120,6 @@ This is intentional to avoid drift and keep behavior predictable.
 
 STEW is opinionated by design. If something feels restrictive, it usually is.
 
-If STEW blocks you, fix the underlying state rather than bypassing governance.
+If STEW blocks, fix the underlying state rather than bypassing governance.
 
 © 2026 Variegate Labs LLC. Released under the MIT License.
-

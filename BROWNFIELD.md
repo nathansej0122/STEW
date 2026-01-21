@@ -6,7 +6,7 @@ This is the most common and most dangerous use case. Follow the steps exactly.
 
 ---
 
-## What “Brownfield” Means Here
+## What "Brownfield" Means Here
 
 A brownfield project is one where:
 - code already exists
@@ -31,9 +31,40 @@ Not to act.
 
 ---
 
-## Step 0: Create Planning Contract (REQUIRED)
+## Step 0: Initialize CLEO (MANDATORY)
 
-The planning contract is **mandatory** for STEW routing. Create these files first.
+CLEO is **mandatory** for STEW routing.
+
+### Determine PROJECT_KEY
+
+PROJECT_KEY is derived automatically:
+1. If git remote origin exists: basename of remote URL without `.git`
+2. Otherwise: basename of repository directory
+
+For a repo at `~/projects/existing-app` with remote `git@github.com:user/existing-app.git`, PROJECT_KEY is `existing-app`.
+
+### Initialize CLEO
+
+```bash
+# Create and initialize CLEO state directory
+mkdir -p ~/.cleo/projects/existing-app
+(cd ~/.cleo/projects/existing-app && cleo init)
+
+# Add initial task and set focus
+(cd ~/.cleo/projects/existing-app && cleo add "Stabilize existing codebase" && cleo focus set T001)
+```
+
+Verify:
+
+```bash
+(cd ~/.cleo/projects/existing-app && cleo focus show)
+```
+
+**IMPORTANT:** Never run `cleo init` inside the project repository.
+
+---
+
+## Step 1: Create Planning Contract (STATE.md)
 
 Before creating the contract:
 - The project must be in a clean git state
@@ -52,7 +83,7 @@ For brownfield projects, extract the current work pointer:
 ```bash
 cat > .planning/STATE.md << 'EOF'
 Current Work:
-  Pointer: .planning/phases/phase-1
+  Pointer: .planning/phases/phase-1/PLAN.md
   Status: Stabilizing existing codebase
 
 Next Action:
@@ -60,41 +91,7 @@ Next Action:
 EOF
 ```
 
-### Create .planning/.continue-here.md
-
-```bash
-cat > .planning/.continue-here.md << 'EOF'
-Current pointer: .planning/phases/phase-1/PLAN.md
-Why: Integrating STEW into existing project
-Next action: Create initial plan for stabilization
-EOF
-```
-
-**These two files are REQUIRED.** STEW will block until they exist.
-
----
-
-## Step 1: Configure CLEO External State (OPTIONAL)
-
-CLEO is **optional** for STEW routing. If you want task tracking:
-
-```bash
-# Create external state directory (NOT in the project repo)
-mkdir -p ~/tooling/native/cleo/projects/your-project
-
-# Initialize CLEO in that directory
-cd ~/tooling/native/cleo/projects/your-project
-cleo init
-
-# Set the environment variable
-export CLEO_PROJECT_DIR=~/tooling/native/cleo/projects/your-project
-```
-
-Add the export to your `.bashrc` or `.zshrc` for persistence.
-
-**IMPORTANT:** Never run `cleo init` inside the project repository.
-
-If you skip CLEO, STEW will still route based on the planning contract.
+**This file is REQUIRED.** STEW will block until it exists with a valid Pointer.
 
 ---
 
@@ -136,7 +133,7 @@ This:
 Create (if missing):
 
 ```bash
-mkdir -p .planning/phases
+mkdir -p .planning/phases/phase-1
 touch .planning/AI-OPS.md
 ```
 
@@ -271,7 +268,9 @@ If STEW hides RALPH:
 
 ## Common Brownfield Failure Modes
 
-- Skipping the planning contract (STATE.md + .continue-here.md)
+- Skipping CLEO initialization
+- Not setting CLEO focus
+- Missing STATE.md or leaving Pointer as placeholder
 - Running `cleo init` inside the project repo (use external state directory)
 - Running RALPH "just to try it"
 - Treating verification plans as mechanical work
@@ -286,7 +285,7 @@ STEW is explicitly designed to prevent these.
 If STEW blocks:
 - read the message
 - inspect `.planning/STATE.md`
-- inspect CLEO task notes
+- check CLEO focus: `(cd ~/.cleo/projects/$PROJECT_KEY && cleo focus show)`
 
 Do **not** delete state unless you understand why.
 
@@ -309,4 +308,3 @@ From that point forward, use the GREENFIELD loop.
 
 - **COMMANDS.md** — every `h:*` command explained
 - **GOVERNANCE.md** — how classification and gating work
-

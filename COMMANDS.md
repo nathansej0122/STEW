@@ -24,131 +24,104 @@ If a command would cause side effects, it will say so explicitly.
 
 ---
 
+## Single Source of Truth
+
+| Question | Answer Source |
+|----------|---------------|
+| What is active? | CLEO focus (mandatory) |
+| Where is work located? | STATE.md Pointer |
+| What should happen? | GSD plans |
+| What is allowed? | Governance rules |
+
+CLEO focus is **mandatory**. STATE.md Pointer is **required**.
+
+---
+
+## CLEO State Auto-Discovery
+
+CLEO project state is stored externally in `$HOME/.cleo/projects/$PROJECT_KEY/`.
+
+**PROJECT_KEY** is derived automatically:
+1. If git remote origin exists: basename of remote URL without `.git`
+2. Otherwise: basename of repository directory
+
+**No environment variables required.** CLEO state location is deterministic.
+
+### Example
+
+```
+Repository: ~/projects/my-app
+Git remote: git@github.com:user/my-app.git
+PROJECT_KEY: my-app
+CLEO_STATE_DIR: ~/.cleo/projects/my-app
+```
+
+---
+
 ## h:status
 
 ### Purpose
 
 Displays the **current coordination state** across all tools.
 
-### Gate 0: Planning Contract (REQUIRED)
+### Gates (all required)
 
-The planning contract (`.planning/STATE.md` + `.planning/.continue-here.md`) is **required**.
-If missing, `h:status` blocks with explicit remediation steps.
-
-### CLEO (Optional)
-
-CLEO is **optional**. If `CLEO_PROJECT_DIR` is not set, `h:status` reports "CLEO: Not configured"
-without blocking. The harness will never recommend running `cleo init` inside the project repository.
+1. **CLEO binary** - Must be available
+2. **CLEO initialized** - `~/.cleo/projects/$PROJECT_KEY/.cleo/todo.json` must exist
+3. **CLEO focus** - A task must be focused
+4. **STATE.md** - `.planning/STATE.md` must exist
+5. **STATE.md Pointer** - Must contain a valid `Pointer:` line
 
 ### What it reads
-- Planning contract (required)
-- Planning focus from .continue-here.md
+- CLEO focus (mandatory)
+- STATE.md Pointer line (work location)
 - git working tree status
-- AI-OPS documents (optional)
-- CLEO focus (optional, from `$CLEO_PROJECT_DIR`)
+- AI-OPS documents (presence check only)
 
 ### What it never does
 - modify files
 - change focus
 - execute tools
-- recommend `cleo init` in the project repo
 
-### When to use
-- at the start of a session
-- when routing blocks
-- to sanity-check state
+### Blocked Outputs
 
----
-
-## h:bootstrap
-
-### Purpose
-
-Creates the **required planning contract files** if they do not exist.
-
-### What it does
-
-- Creates `.planning/` directory if missing
-- Creates `.planning/STATE.md` with minimal template if missing
-- Creates `.planning/.continue-here.md` with minimal template if missing
-- Reports what was created vs skipped
-- Reminds user to edit placeholder values
-
-### What it does *not* do
-
-- Overwrite existing files (safe to run multiple times)
-- Auto-run (must be explicitly invoked by user)
-
-### When to use
-
-- When `h:status` blocks due to missing planning contract
-- When starting a new project and you want STEW to create the files for you
-
-### Templates created
-
-**`.planning/STATE.md`:**
+If CLEO not initialized:
 ```
-Current Work:
-  Pointer: <path to current plan doc or phase directory>
-  Status: <one-line status>
+=== HARNESS STATUS - BLOCKED ===
 
-Next Action:
-  <one-line next step>
+CLEO not initialized for this project.
+
+Project Key: my-app
+CLEO State Dir: ~/.cleo/projects/my-app
+
+To initialize:
+  mkdir -p "~/.cleo/projects/my-app"
+  (cd "~/.cleo/projects/my-app" && cleo init)
+
+Then set focus:
+  (cd "~/.cleo/projects/my-app" && cleo add "Initial task" && cleo focus set T001)
 ```
 
-**`.planning/.continue-here.md`:**
+If no CLEO focus:
 ```
-Current pointer: <path to plan doc to resume>
-Why: <one-line context>
-Next action: <one-line next step>
+=== HARNESS STATUS - BLOCKED ===
+
+No CLEO focus set.
+
+CLEO focus is mandatory for STEW routing.
+
+Set focus:
+  (cd "~/.cleo/projects/my-app" && cleo focus set <task-id>)
 ```
 
----
+If STATE.md Pointer missing:
+```
+=== HARNESS STATUS - BLOCKED ===
 
-## h:sync-planning
+STATE.md Pointer is missing or contains placeholder.
 
-### Purpose
-
-Auto-populates `.planning/.continue-here.md` from `.planning/STATE.md`.
-
-Eliminates manual editing of `.continue-here.md` by deriving values from repo-authored state.
-
-### What it does
-
-- Requires `.planning/STATE.md` (blocks if missing)
-- Extracts pointer from STATE.md (`Resume file:`, `Pointer:`, or `Phase Directory:`)
-- Extracts status/why from `Status:` line
-- Extracts next action from `Next Action:` line
-- Writes `.planning/.continue-here.md` with derived values
-
-### Extraction Logic
-
-**CURRENT_POINTER** (priority order):
-1. `Resume file: <path>`
-2. `Pointer: <path>`
-3. `Phase Directory: <dir>` - resolves to `<dir>/PLAN.md` or first `*-PLAN.md`
-
-**WHY**: From `Status:` line, or fallback: "Derived from STATE.md current phase pointer"
-
-**NEXT_ACTION**: From `Next Action:` line, or fallback: "Continue from current plan file"
-
-### Overwrite Policy
-
-| Condition | Behavior | Result |
-|-----------|----------|--------|
-| File does not exist | Create | Written |
-| File contains placeholders (`<path to`, `<one-line`, `TODO`) | Overwrite | Written |
-| File has `# Generated by h:sync-planning` header | Overwrite if content differs | Written or Already up-to-date |
-| User-edited file (no marker), content differs | Overwrite with marker line | Overwritten |
-| Content matches STATE.md | No change | Already up-to-date |
-
-The command is idempotent and safe to run multiple times.
-
-### When to use
-
-- After editing `.planning/STATE.md`
-- After `h:bootstrap` creates template files
-- When `h:status` shows placeholder content in `.continue-here.md`
+Edit .planning/STATE.md and set the Pointer line to a real path.
+```
 
 ---
 
@@ -156,21 +129,26 @@ The command is idempotent and safe to run multiple times.
 
 ### Purpose
 
-Displays the **current planning focus** from the planning contract.
+Displays the **current focus** from CLEO and STATE.md Pointer.
 
 ### What it does
-- Reads current pointer from `.continue-here.md`
-- Reads state from `STATE.md`
-- Shows the recommended file to open (where work should resume)
+- Shows CLEO focus task (id, title, status, description)
+- Shows STATE.md Pointer (work location)
+- Indicates whether pointer file/directory exists
+
+### Gates (all required)
+- CLEO binary available
+- CLEO initialized
+- CLEO focus set
+- STATE.md exists
+- STATE.md Pointer valid
 
 ### What it does *not* do
 - Create or modify planning files
-- Require CLEO (CLEO is optional)
 
 ### Why it exists
 
-STEW treats planning focus as the single source of truth. The `.continue-here.md` file
-determines where work should resume.
+CLEO focus answers "What task?" and STATE.md Pointer answers "Where is the plan?"
 
 ---
 
@@ -183,8 +161,8 @@ This is the **core STEW command**.
 It determines the **single next allowed action** based on current state.
 
 ### What it does
-1. Verifies planning contract (Gate 0 - REQUIRED)
-2. Reads planning focus from .continue-here.md
+1. Verifies CLEO focus (mandatory)
+2. Reads STATE.md Pointer (work location)
 3. Checks AI-OPS (optional)
 4. Determines current phase
 5. Detects plans
@@ -195,7 +173,6 @@ It determines the **single next allowed action** based on current state.
 - execute GSD
 - run ECC
 - invoke RALPH
-- require CLEO (CLEO is optional)
 
 ### Output guarantees
 - deterministic
@@ -221,7 +198,7 @@ Performs **one-time work classification** for a plan.
 - determines work type and scope
 - decides whether automation is allowed
 - decides whether review is useful
-- persists the result
+- persists the result to HARNESS_STATE.json
 
 ### Why it matters
 
@@ -312,6 +289,7 @@ If automation is forbidden, this command should not be used.
 Prepares and validates a RALPH execution.
 
 ### What it does
+- validates CLEO focus and STATE.md
 - validates clean working tree
 - validates bundle integrity
 - prints the exact command to run
@@ -374,7 +352,7 @@ This is the GSD-style commit strategy: frequent commits are OK, but only for ver
 **Planning mode:**
 ```bash
 STEW_COMMIT_MODE=planning \
-STEW_COMMIT_MSG="initialize planning contract" \
+STEW_COMMIT_MSG="update STATE.md pointer" \
 STEW_COMMIT_YES=1 \
 h:commit
 ```
@@ -383,7 +361,7 @@ h:commit
 ```bash
 STEW_COMMIT_MODE=harness \
 STEW_COMMIT_TYPE=feat \
-STEW_COMMIT_MSG="add bootstrap command" \
+STEW_COMMIT_MSG="add new ECC wrapper" \
 STEW_COMMIT_YES=1 \
 h:commit
 ```
@@ -464,6 +442,8 @@ Routing based on narrative history would require repeated interpretation, which 
 
 Maintained by GSD.
 
+Contains exactly one Pointer line indicating the current work location.
+
 Used by:
 - GSD for phase progression
 - STEW for routing eligibility
@@ -472,15 +452,15 @@ STATE.md encodes position, not meaning.
 
 ---
 
-### CLEO Task Notes — Decisions ("What has already been decided?")
+### CLEO Task Focus — Identity ("What task is active?")
 
-Stored in CLEO task metadata.
+Stored in CLEO project state (external to repo).
 
 Used by:
-- STEW to cache classification and governance decisions
-- humans to retain rationale across sessions
+- STEW to gate routing (mandatory)
+- humans to retain task identity across sessions
 
-These notes prevent the system from re-evaluating safety, scope, and automation decisions.
+CLEO focus is the single source of truth for "what is active."
 
 ---
 
@@ -520,7 +500,7 @@ As projects grow, this separation is what keeps token usage predictable and beha
 - PLAN.md is a contract
 - SUMMARY.md is a receipt
 - STATE.md is your current location
-- CLEO notes are margin annotations
+- CLEO focus is your active work item
 - STEW enforces the rules of the contract
 - GSD builds what the contract specifies
 
@@ -528,53 +508,86 @@ You do not drive using receipts.
 
 ---
 
-## Regression Test: CLEO External State Handling
+## Regression Tests
 
-To verify that the harness correctly handles CLEO external state, test these scenarios:
-
-### Scenario 1: No CLEO_PROJECT_DIR set
+### Scenario 1: CLEO not initialized
 
 ```bash
-unset CLEO_PROJECT_DIR
+# Ensure CLEO state dir doesn't exist
+rm -rf ~/.cleo/projects/test-project
+cd /path/to/test-project
 h:status
 ```
 
 **Expected output:**
-- CLEO status line shows: `Not configured (set CLEO_PROJECT_DIR)`
-- No JSON error blobs (e.g., `E_NOT_INITIALIZED`)
-- No recommendation to run `cleo init` in the project repo
+```
+=== HARNESS STATUS - BLOCKED ===
 
-### Scenario 2: CLEO_PROJECT_DIR set but uninitialized
+CLEO not initialized for this project.
+
+Project Key: test-project
+CLEO State Dir: ~/.cleo/projects/test-project
+
+To initialize:
+  mkdir -p "~/.cleo/projects/test-project"
+  (cd "~/.cleo/projects/test-project" && cleo init)
+
+Then set focus:
+  (cd "~/.cleo/projects/test-project" && cleo add "Initial task" && cleo focus set T001)
+```
+
+### Scenario 2: No CLEO focus
 
 ```bash
-export CLEO_PROJECT_DIR=/tmp/test-cleo-uninitialized
-mkdir -p "$CLEO_PROJECT_DIR"
+# Initialize but don't set focus
+mkdir -p ~/.cleo/projects/test-project
+(cd ~/.cleo/projects/test-project && cleo init)
 h:status
 ```
 
 **Expected output:**
-- CLEO status line shows: `Project state not initialized in $CLEO_PROJECT_DIR`
-- No JSON error blobs
-- May recommend initializing CLEO *in the external directory*, NOT in the project repo
+```
+=== HARNESS STATUS - BLOCKED ===
 
-### Scenario 3: CLEO_PROJECT_DIR set and initialized
+No CLEO focus set.
+
+CLEO focus is mandatory for STEW routing.
+
+Set focus:
+  (cd "~/.cleo/projects/test-project" && cleo focus set <task-id>)
+```
+
+### Scenario 3: STATE.md Pointer missing
 
 ```bash
-export CLEO_PROJECT_DIR=/tmp/test-cleo-initialized
-mkdir -p "$CLEO_PROJECT_DIR"
-(cd "$CLEO_PROJECT_DIR" && cleo init)
-(cd "$CLEO_PROJECT_DIR" && cleo add "Test task" && cleo focus set T001)
+# CLEO configured but STATE.md has placeholder
 h:status
 ```
 
 **Expected output:**
-- CLEO status line shows: `T001 - Test task`
-- Recommendations proceed normally (e.g., `h:route`)
+```
+=== HARNESS STATUS - BLOCKED ===
+
+STATE.md Pointer is missing or contains placeholder.
+
+Edit .planning/STATE.md and set the Pointer line to a real path.
+```
+
+### Scenario 4: .continue-here.md exists (deprecated)
+
+If `.planning/.continue-here.md` exists, commands should warn:
+
+```
+WARNING: .planning/.continue-here.md exists but is deprecated.
+This file is not part of the STEW contract. Delete it:
+  rm .planning/.continue-here.md
+```
 
 ### Verification Checklist
 
-- [ ] `h:status` never emits raw JSON error objects
-- [ ] `h:status` never recommends `cleo init` inside the project repo
-- [ ] `h:focus` handles all three scenarios cleanly
-- [ ] `h:route` blocks with clear messages when CLEO is not configured
-
+- [ ] `h:status` hard-fails if CLEO not initialized
+- [ ] `h:status` hard-fails if no CLEO focus
+- [ ] `h:status` hard-fails if STATE.md Pointer missing
+- [ ] `h:focus` has same hard-fail behavior
+- [ ] `h:route` has same hard-fail behavior
+- [ ] All commands warn if .continue-here.md exists

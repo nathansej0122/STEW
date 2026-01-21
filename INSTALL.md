@@ -70,14 +70,13 @@ This design is intentional and non-negotiable.
 
 | Tool | Status | When it is used |
 |----|----|----|
-| **Planning Contract** | **REQUIRED** | Always (STATE.md + .continue-here.md) |
+| **CLEO** | **MANDATORY** | Task identity (focus) - required for routing |
 | **GSD** | Required | Planning & execution |
 | **ECC** | Optional | Review agents (when suggested) |
 | **RALPH** | Optional | Automation (only when allowed) |
-| **CLEO** | **Optional** | Task tracking (if configured) |
 | **STEW** | Required | Routing & governance |
 
-The planning contract is the **only hard gate** for routing. CLEO is optional.
+**CLEO is mandatory.** Commands hard-fail without CLEO focus.
 
 ---
 
@@ -100,16 +99,52 @@ If any command fails, fix that **before continuing**.
 
 ---
 
-## How Projects See Native Tools
+## CLEO State: Auto-Discovery (No Configuration Needed)
 
-This is the most common point of confusion.
+CLEO project state is stored externally in `~/.cleo/projects/$PROJECT_KEY/`.
+
+**PROJECT_KEY** is derived automatically:
+1. If git remote origin exists: basename of remote URL without `.git`
+2. Otherwise: basename of repository directory
+
+**No environment variables required.** The location is deterministic.
+
+### Example
+
+```
+Repository: ~/projects/my-app
+Git remote: git@github.com:user/my-app.git
+PROJECT_KEY: my-app
+CLEO_STATE_DIR: ~/.cleo/projects/my-app
+```
+
+### Initializing CLEO for a Project
+
+```bash
+# Create directory
+mkdir -p ~/.cleo/projects/my-app
+
+# Initialize CLEO
+(cd ~/.cleo/projects/my-app && cleo init)
+
+# Add a task and set focus
+(cd ~/.cleo/projects/my-app && cleo add "Initial task" && cleo focus set T001)
+```
+
+### Important
+
+- **NEVER** run `cleo init` inside a project repository
+- Project repos should NOT contain a `.cleo/` directory
+- If you see `.cleo/` in a project repo, it is misconfigured
+
+---
+
+## How Projects See Native Tools
 
 ### CLEO
 - Must be runnable as `cleo` on your PATH (or set `CLEO_BIN`)
-- **CLEO project state is EXTERNAL to repos** — project repos must NOT contain `.cleo/`
-- Set `CLEO_PROJECT_DIR` to point to the external directory containing CLEO state
-- Example: `export CLEO_PROJECT_DIR=~/tooling/native/cleo/projects/my-project`
-- In your setup, the binary is provided via a dev-mode symlink to the native clone
+- CLEO project state is stored externally (`~/.cleo/projects/$PROJECT_KEY/`)
+- State location is auto-discovered, no configuration needed
 
 ### GSD (Get Shit Done)
 - GSD commands are **not** installed into projects
@@ -146,70 +181,15 @@ Projects never run RALPH directly.
 
 ---
 
-## CLEO External State Configuration
-
-**CLEO project state must NOT live inside project repositories.**
-
-CLEO state (`.cleo/todo.json` and related files) is stored in an external directory.
-This prevents:
-- state pollution in project repos
-- accidental commits of CLEO internal files
-- conflicts when the same repo is used in multiple contexts
-
-### Setting Up CLEO Project State
-
-1. Create a directory for CLEO project state:
-
-```bash
-mkdir -p ~/tooling/native/cleo/projects/my-project
-```
-
-2. Initialize CLEO in that directory (NOT in your project repo):
-
-```bash
-cd ~/tooling/native/cleo/projects/my-project
-cleo init
-```
-
-3. Set the environment variable:
-
-```bash
-export CLEO_PROJECT_DIR=~/tooling/native/cleo/projects/my-project
-```
-
-Add this to your `.bashrc` or `.zshrc` for persistence.
-
-### Running CLEO Commands
-
-When working with a project under STEW governance:
-
-```bash
-# All CLEO commands must run from CLEO_PROJECT_DIR
-(cd $CLEO_PROJECT_DIR && cleo list)
-(cd $CLEO_PROJECT_DIR && cleo focus set T001)
-(cd $CLEO_PROJECT_DIR && cleo focus show)
-```
-
-The harness commands (`h:status`, `h:focus`, `h:route`) handle this automatically.
-
-### Important
-
-- **NEVER** run `cleo init` inside a project repository
-- Project repos should NOT contain a `.cleo/` directory
-- If you see `.cleo/` in a project repo, it is misconfigured
-
----
-
 ## Planning Contract (REQUIRED)
 
-Every STEW-governed project **must** have a planning contract. This is the only hard requirement.
+Every STEW-governed project **must** have a planning contract.
 
-### Required Files
+### Required File
 
-- `.planning/STATE.md` - Current work pointer and status
-- `.planning/.continue-here.md` - Resume pointer for sessions
+- `.planning/STATE.md` - Contains Pointer line (work location)
 
-### Minimal Templates
+### Minimal Template
 
 **Template: .planning/STATE.md**
 ```
@@ -221,12 +201,7 @@ Next Action:
   <one-line next step>
 ```
 
-**Template: .planning/.continue-here.md**
-```
-Current pointer: <path to plan doc to resume>
-Why: <one-line context>
-Next action: <one-line next step>
-```
+The Pointer line must contain an actual path, not a placeholder.
 
 ### Optional Files
 
@@ -236,6 +211,10 @@ These files enhance governance but are not required for routing:
 - `.planning/HARNESS_STATE.json` - Classification cache
 
 See GREENFIELD.md or BROWNFIELD.md for setup instructions.
+
+### Deprecated
+
+`.planning/.continue-here.md` is **deprecated** and not part of the contract. If present, commands will warn to delete it.
 
 ---
 
@@ -267,32 +246,50 @@ h:status
 ```
 
 A successful install shows:
-- Planning Contract: OK (required)
-- Planning Focus: current pointer from .continue-here.md
-- CLEO (optional): status if configured
+- CLEO Focus: [task id and title]
+- STATE.md Pointer: [path]
 - Missing prerequisites clearly reported
 
-**If planning contract is missing:**
+**If CLEO not initialized:**
 
 ```
 === HARNESS STATUS - BLOCKED ===
 
-Missing required planning contract:
- .planning/STATE.md
- .planning/.continue-here.md
+CLEO not initialized for this project.
 
-Create them using the templates above, then rerun h:status.
+Project Key: my-app
+CLEO State Dir: ~/.cleo/projects/my-app
+
+To initialize:
+  mkdir -p "~/.cleo/projects/my-app"
+  (cd "~/.cleo/projects/my-app" && cleo init)
+
+Then set focus:
+  (cd "~/.cleo/projects/my-app" && cleo add "Initial task" && cleo focus set T001)
 ```
 
-**CLEO statuses (optional):**
+**If no CLEO focus:**
 
-| Status | Meaning |
-|--------|---------|
-| `T### - Task Title` | CLEO configured and focused |
-| `None - no focused task` | CLEO configured but no focus set |
-| `Not configured` | `CLEO_PROJECT_DIR` not set (OK - CLEO is optional) |
+```
+=== HARNESS STATUS - BLOCKED ===
 
-If `h:status` blocks on planning contract, create the required files first.
+No CLEO focus set.
+
+CLEO focus is mandatory for STEW routing.
+
+Set focus:
+  (cd "~/.cleo/projects/my-app" && cleo focus set <task-id>)
+```
+
+**If STATE.md Pointer missing:**
+
+```
+=== HARNESS STATUS - BLOCKED ===
+
+STATE.md Pointer is missing or contains placeholder.
+
+Edit .planning/STATE.md and set the Pointer line to a real path.
+```
 
 ---
 
@@ -331,4 +328,3 @@ The harness exists to prevent:
 - invisible AI behavior
 
 Follow the steps exactly. If something blocks, fix the root cause instead of bypassing it.
-

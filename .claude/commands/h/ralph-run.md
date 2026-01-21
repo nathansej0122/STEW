@@ -8,7 +8,7 @@ allowed-tools: Read, Grep, Glob, Bash
 
 You are preparing a RALPH execution. **You do NOT run RALPH inline via Claude tools.** You output the exact command for the user to run in their terminal.
 
-**Planning contract is REQUIRED. CLEO is OPTIONAL.**
+**CLEO focus is MANDATORY. STATE.md Pointer is REQUIRED.**
 
 ## Arguments
 
@@ -19,32 +19,63 @@ Expected arguments via `$ARGUMENTS`:
 
 Example: `h:ralph-run 5 add-priority-field`
 
-## Gate 0: Planning Contract (REQUIRED)
+## Gate 0: CLEO Focus and STATE.md (REQUIRED)
 
 ```bash
-MISSING=""
-if [ ! -f ".planning/STATE.md" ]; then
-  MISSING="$MISSING .planning/STATE.md"
+# === CLEO Auto-Discovery ===
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
+if [ -n "$REMOTE_URL" ]; then
+  PROJECT_KEY=$(basename "$REMOTE_URL" .git)
+else
+  PROJECT_KEY=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 fi
-if [ ! -f ".planning/.continue-here.md" ]; then
-  MISSING="$MISSING .planning/.continue-here.md"
+CLEO_STATE_DIR="$HOME/.cleo/projects/$PROJECT_KEY"
+
+# Check CLEO
+if command -v cleo >/dev/null 2>&1; then
+  CLEO_CMD="cleo"
+elif [ -n "${CLEO_BIN:-}" ] && [ -x "$CLEO_BIN" ]; then
+  CLEO_CMD="$CLEO_BIN"
+else
+  echo "CLEO_BINARY: NOT_FOUND"
+  exit 1
 fi
 
-if [ -n "$MISSING" ]; then
-  echo "PLANNING_CONTRACT_MISSING:$MISSING"
-else
-  echo "PLANNING_CONTRACT_OK"
+if [ ! -f "$CLEO_STATE_DIR/.cleo/todo.json" ]; then
+  echo "CLEO_INIT: NOT_INITIALIZED"
+  exit 1
 fi
+
+CLEO_FOCUS=$( (cd "$CLEO_STATE_DIR" && "$CLEO_CMD" focus show --format json 2>/dev/null) || echo '{}')
+FOCUS_ID=$(echo "$CLEO_FOCUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('id',''))" 2>/dev/null || true)
+
+if [ -z "$FOCUS_ID" ]; then
+  echo "CLEO_FOCUS: NO_FOCUS"
+  exit 1
+fi
+echo "CLEO_FOCUS: OK ($FOCUS_ID)"
+
+# Check STATE.md
+if [ ! -f ".planning/STATE.md" ]; then
+  echo "STATE_MD: MISSING"
+  exit 1
+fi
+
+POINTER=$(grep -E "^\s*Pointer:" .planning/STATE.md 2>/dev/null | head -1 | sed 's/^[[:space:]]*Pointer:[[:space:]]*//')
+if [ -z "$POINTER" ] || echo "$POINTER" | grep -q "^<"; then
+  echo "STATE_POINTER: MISSING_OR_PLACEHOLDER"
+  exit 1
+fi
+echo "STATE_POINTER: OK"
 ```
 
-If `PLANNING_CONTRACT_MISSING`:
+If any gate fails:
 ```
 === RALPH RUN - BLOCKED ===
 
-Missing required planning contract:
-$MISSING
+[Specific failure reason]
 
-Create them using the templates in GREENFIELD.md or BROWNFIELD.md, then rerun.
+See h:status for remediation steps.
 ```
 Stop.
 
@@ -67,33 +98,7 @@ Bundle not found: .planning/ralph/[task-slug]/
 Create it first: h:ralph-init [task-slug]
 ```
 
-### 2. CLEO Status (Optional - informational only)
-
-CLEO is optional. If configured, show status. Do NOT block if not configured.
-
-```bash
-if [ -n "${CLEO_PROJECT_DIR:-}" ]; then
-  if [ -n "${CLEO_BIN:-}" ]; then
-    CLEO_CMD="$CLEO_BIN"
-  elif command -v cleo >/dev/null 2>&1; then
-    CLEO_CMD="cleo"
-  else
-    echo "CLEO: Binary not found"
-    exit 0
-  fi
-  if [ -f "$CLEO_PROJECT_DIR/.cleo/todo.json" ]; then
-    (cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show 2>/dev/null) || echo "CLEO: Error"
-  else
-    echo "CLEO: Not initialized"
-  fi
-else
-  echo "CLEO: Not configured"
-fi
-```
-
-Report CLEO status but do NOT block execution.
-
-### 3. Clean Git Tree
+### 2. Clean Git Tree
 
 ```bash
 git status --porcelain
@@ -105,11 +110,11 @@ WARNING: Uncommitted changes detected. The shim requires a clean tree.
 (Untracked files in .planning/ralph/[slug]/ are allowed)
 ```
 
-### 4. AI-OPS Present
+### 3. AI-OPS Present
 
 Check for `.planning/AI-OPS.md`. If present, remind user it should be read.
 
-### 5. prd.json Valid
+### 4. prd.json Valid
 
 ```bash
 cat .planning/ralph/[task-slug]/prd.json | head -20
@@ -122,9 +127,9 @@ Verify it's valid JSON and has required fields.
 ```
 === RALPH RUN PREFLIGHT ===
 
-Planning Contract: OK
+CLEO Focus (mandatory): [FOCUS_ID]
+STATE.md Pointer: OK
 Bundle: .planning/ralph/[task-slug]/
-CLEO (optional): [Status or "Not configured"]
 Git Status: [Clean or WARNING: dirty]
 AI-OPS: [Present or Not found]
 prd.json: [Valid or ERROR: invalid]

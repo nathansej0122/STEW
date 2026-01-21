@@ -38,10 +38,13 @@ If two tools appear to overlap, something is wrong.
 
 STEW enforces **non-negotiable sources of truth**:
 
-- **What is active?** → CLEO focus
-- **What should happen?** → GSD plans
-- **What is allowed?** → Governance rules
-- **What already happened?** → Persisted state
+| Question | Answer |
+|----------|--------|
+| What is active? | CLEO focus (mandatory) |
+| Where is the plan? | STATE.md Pointer |
+| What should happen? | GSD plans |
+| What is allowed? | Governance rules |
+| What already happened? | Persisted state |
 
 STEW never invents intent and never overrides these sources.
 
@@ -51,12 +54,13 @@ STEW never invents intent and never overrides these sources.
 
 On every run of `h:route`, STEW:
 
-1. Confirms a CLEO task is focused
-2. Confirms governance files exist (`AI-OPS.md`, `STATE.md`)
-3. Determines the current phase
-4. Checks whether a plan exists
-5. Ensures the plan is classified (once)
-6. Recommends exactly **one** next command
+1. Confirms a CLEO task is focused (mandatory)
+2. Confirms STATE.md has a valid Pointer
+3. Confirms governance files exist (`AI-OPS.md`, `STATE.md`)
+4. Determines the current phase
+5. Checks whether a plan exists
+6. Ensures the plan is classified (once)
+7. Recommends exactly **one** next command
 
 That is all.
 
@@ -155,10 +159,26 @@ This is intentional.
 
 ---
 
+## CLEO is Mandatory
+
+Previous versions of STEW treated CLEO as optional.
+
+**CLEO is now mandatory.**
+
+Every harness command gates on CLEO focus. Without it:
+- `h:status` blocks
+- `h:focus` blocks
+- `h:route` blocks
+
+This ensures task identity is always stable and unambiguous.
+
+CLEO state is auto-discovered based on PROJECT_KEY (derived from git remote or repo basename). No environment variables required.
+
+---
+
 ## Next Documents
 
 - **GREENFIELD.md** — starting a new project
 - **BROWNFIELD.md** — integrating into an existing project
 
 Do not skip directly to commands without understanding this model.
-

@@ -235,7 +235,7 @@ echo "COMMIT_COMPLETE"
 
 ## Examples
 
-### Planning mode (after editing .continue-here.md)
+### Planning mode (after editing STATE.md)
 
 ```bash
 STEW_COMMIT_MODE=planning \

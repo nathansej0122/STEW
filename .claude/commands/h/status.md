@@ -1,6 +1,6 @@
 ---
 name: h:status
-description: Read-only overview of current coordination state (planning contract, git status, optional CLEO)
+description: Read-only overview of current coordination state (CLEO mandatory, planning contract)
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -11,32 +11,71 @@ allowed-tools: Read, Grep, Glob, Bash
 
 You are performing a read-only status check for the coordination overlay.
 
+**CLEO is MANDATORY. Planning contract (STATE.md) is REQUIRED.**
+
 ## Run: Consolidated Status Check
 
 Execute this single Bash block to gather all status information:
 
 ```bash
-# --- Planning Contract Check ---
-MISSING=""
-[ ! -f ".planning/STATE.md" ] && MISSING="$MISSING .planning/STATE.md"
-[ ! -f ".planning/.continue-here.md" ] && MISSING="$MISSING .planning/.continue-here.md"
-
-if [ -n "$MISSING" ]; then
-  echo "PLANNING_CONTRACT: MISSING$MISSING"
+# === CLEO Auto-Discovery (MANDATORY) ===
+# Derive PROJECT_KEY: git remote origin basename, else repo directory basename
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
+if [ -n "$REMOTE_URL" ]; then
+  PROJECT_KEY=$(basename "$REMOTE_URL" .git)
 else
-  echo "PLANNING_CONTRACT: OK"
+  PROJECT_KEY=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 fi
+CLEO_STATE_DIR="$HOME/.cleo/projects/$PROJECT_KEY"
+echo "PROJECT_KEY: $PROJECT_KEY"
+echo "CLEO_STATE_DIR: $CLEO_STATE_DIR"
 
-# --- Planning Focus ---
-echo ""
-echo "CONTINUE_HERE_CONTENTS:"
-if [ -f ".planning/.continue-here.md" ]; then
-  cat ".planning/.continue-here.md"
+# === Gate 0: CLEO Binary ===
+if command -v cleo >/dev/null 2>&1; then
+  CLEO_CMD="cleo"
+elif [ -n "${CLEO_BIN:-}" ] && [ -x "$CLEO_BIN" ]; then
+  CLEO_CMD="$CLEO_BIN"
 else
-  echo "(file missing)"
+  echo "CLEO_BINARY: NOT_FOUND"
+  exit 1
 fi
+echo "CLEO_BINARY: OK"
 
-# --- Git Status ---
+# === Gate 1: CLEO Initialized ===
+if [ ! -f "$CLEO_STATE_DIR/.cleo/todo.json" ]; then
+  echo "CLEO_INIT: NOT_INITIALIZED"
+  exit 1
+fi
+echo "CLEO_INIT: OK"
+
+# === Gate 2: CLEO Focus ===
+CLEO_FOCUS=$( (cd "$CLEO_STATE_DIR" && "$CLEO_CMD" focus show --format json 2>/dev/null) || echo '{}')
+FOCUS_ID=$(echo "$CLEO_FOCUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('id',''))" 2>/dev/null || true)
+FOCUS_TITLE=$(echo "$CLEO_FOCUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('title',''))" 2>/dev/null || true)
+FOCUS_STATUS=$(echo "$CLEO_FOCUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('status',''))" 2>/dev/null || true)
+
+if [ -z "$FOCUS_ID" ]; then
+  echo "CLEO_FOCUS: NO_FOCUS"
+  exit 1
+fi
+echo "CLEO_FOCUS: $FOCUS_ID - $FOCUS_TITLE ($FOCUS_STATUS)"
+
+# === Gate 3: Planning Contract (STATE.md) ===
+if [ ! -f ".planning/STATE.md" ]; then
+  echo "STATE_MD: MISSING"
+  exit 1
+fi
+echo "STATE_MD: OK"
+
+# === Gate 4: STATE.md Pointer ===
+POINTER_LINE=$(grep -E "^\s*Pointer:" .planning/STATE.md 2>/dev/null | head -1 | sed 's/^[[:space:]]*Pointer:[[:space:]]*//')
+if [ -z "$POINTER_LINE" ] || echo "$POINTER_LINE" | grep -q "^<"; then
+  echo "STATE_POINTER: MISSING_OR_PLACEHOLDER"
+  exit 1
+fi
+echo "STATE_POINTER: $POINTER_LINE"
+
+# === Git Status ===
 echo ""
 echo "GIT_BRANCH: $(git branch --show-current 2>/dev/null || echo 'unknown')"
 PORCELAIN=$(git status --porcelain 2>/dev/null)
@@ -46,106 +85,140 @@ else
   echo "GIT_STATUS: $(echo "$PORCELAIN" | wc -l | tr -d ' ') uncommitted changes"
 fi
 
-# --- AI-OPS Documents ---
+# === AI-OPS Documents (presence only) ===
 echo ""
 [ -f ".planning/AI-OPS.md" ] && echo "AI_OPS_MD: Present - READ REQUIRED" || echo "AI_OPS_MD: Missing"
 [ -f ".planning/AI-OPS-KNOWLEDGE.md" ] && echo "AI_OPS_KNOWLEDGE_MD: Present" || echo "AI_OPS_KNOWLEDGE_MD: Missing"
-[ -f ".planning/LOCKED_BEHAVIOR_CANDIDATES.md" ] && echo "LOCKED_BEHAVIOR_MD: Present" || echo "LOCKED_BEHAVIOR_MD: Missing"
 
-# --- Planning Infrastructure ---
-echo ""
-[ -f ".planning/STATE.md" ] && echo "STATE_MD: Present" || echo "STATE_MD: Missing"
-[ -f ".planning/.continue-here.md" ] && echo "CONTINUE_HERE_MD: Present" || echo "CONTINUE_HERE_MD: Missing"
-[ -f ".planning/ROADMAP.md" ] && echo "ROADMAP_MD: Present" || echo "ROADMAP_MD: Missing"
-[ -f ".planning/PROJECT.md" ] && echo "PROJECT_MD: Present" || echo "PROJECT_MD: Missing"
-
-# --- CLEO Status (Optional) ---
-echo ""
-if [ -n "${CLEO_PROJECT_DIR:-}" ]; then
-  if [ -n "${CLEO_BIN:-}" ]; then
-    CLEO_CMD="$CLEO_BIN"
-  elif command -v cleo >/dev/null 2>&1; then
-    CLEO_CMD="cleo"
-  else
-    echo "CLEO: Binary not found"
-    exit 0
-  fi
-  if [ -f "$CLEO_PROJECT_DIR/.cleo/todo.json" ]; then
-    CLEO_OUT=$( (cd "$CLEO_PROJECT_DIR" && "$CLEO_CMD" focus show 2>/dev/null) || echo "FOCUS_ERROR")
-    echo "CLEO: $CLEO_OUT"
-  else
-    echo "CLEO: Not initialized"
-  fi
-else
-  echo "CLEO: Not configured"
+# === .continue-here.md violation check ===
+if [ -f ".planning/.continue-here.md" ]; then
+  echo ""
+  echo "CONTINUE_HERE_VIOLATION: File exists but is not part of contract"
 fi
 ```
 
 ## Interpretation
 
-If `PLANNING_CONTRACT: MISSING` appears in output, show this block message and stop:
+### If `CLEO_BINARY: NOT_FOUND`
 
 ```
 === HARNESS STATUS - BLOCKED ===
 
-Missing required planning contract.
+CLEO binary not found.
 
-Run h:bootstrap to create missing files OR h:sync-planning to populate .continue-here.md from STATE.md.
+CLEO is mandatory for STEW routing.
 
-Or create them manually using templates below, then rerun h:status.
+Install CLEO: See https://github.com/kryptobaseddev/cleo
+```
 
-Template: .planning/STATE.md
----
+### If `CLEO_INIT: NOT_INITIALIZED`
+
+```
+=== HARNESS STATUS - BLOCKED ===
+
+CLEO not initialized for this project.
+
+Project Key: [PROJECT_KEY]
+CLEO State Dir: [CLEO_STATE_DIR]
+
+To initialize:
+  mkdir -p "[CLEO_STATE_DIR]"
+  (cd "[CLEO_STATE_DIR]" && cleo init)
+
+Then set focus:
+  (cd "[CLEO_STATE_DIR]" && cleo add "Initial task" && cleo focus set T001)
+```
+
+### If `CLEO_FOCUS: NO_FOCUS`
+
+```
+=== HARNESS STATUS - BLOCKED ===
+
+No CLEO focus set.
+
+CLEO focus is mandatory for STEW routing.
+
+Set focus:
+  (cd "[CLEO_STATE_DIR]" && cleo focus set <task-id>)
+
+Or add a task first:
+  (cd "[CLEO_STATE_DIR]" && cleo add "Your task" && cleo focus set T001)
+```
+
+### If `STATE_MD: MISSING`
+
+```
+=== HARNESS STATUS - BLOCKED ===
+
+Missing .planning/STATE.md
+
+Create it with this minimal template:
+
 Current Work:
   Pointer: <path to current plan doc or phase directory>
   Status: <one-line status>
 
 Next Action:
   <one-line next step>
----
-
-Template: .planning/.continue-here.md
----
-Current pointer: <path to plan doc to resume>
-Why: <one-line context>
-Next action: <one-line next step>
----
-
-See GREENFIELD.md or BROWNFIELD.md for full setup instructions.
 ```
 
-## Output Format
+### If `STATE_POINTER: MISSING_OR_PLACEHOLDER`
 
-Provide a summary in this exact structure:
+```
+=== HARNESS STATUS - BLOCKED ===
+
+STATE.md Pointer is missing or contains placeholder.
+
+Edit .planning/STATE.md and set the Pointer line to a real path:
+
+Current Work:
+  Pointer: .planning/phases/phase-1/PLAN.md
+  Status: Working on phase 1
+```
+
+### If `CONTINUE_HERE_VIOLATION`
+
+Include this warning in output:
+
+```
+WARNING: .planning/.continue-here.md exists but is deprecated.
+This file is not part of the STEW contract. Delete it:
+  rm .planning/.continue-here.md
+```
+
+## Output Format (All Gates Pass)
 
 ```
 === HARNESS STATUS ===
 
-Planning Contract: [OK] or [MISSING - see above]
-Planning Focus: [pointer from .continue-here.md]
+CLEO (mandatory):
+  Project Key: [PROJECT_KEY]
+  State Dir: [CLEO_STATE_DIR]
+  Focus: [FOCUS_ID] - [FOCUS_TITLE] ([FOCUS_STATUS])
+
+Planning Contract:
+  STATE.md: Present
+  Pointer: [extracted path from STATE.md]
+
 Git Status: [Clean] or [Uncommitted changes: X files]
 Branch: [branch-name]
 
-AI-OPS Documents (optional):
+AI-OPS Documents:
   - AI-OPS.md: [Present - READ REQUIRED] or [Missing]
-  - LOCKED_BEHAVIOR_CANDIDATES.md: [Present] or [Missing]
-
-CLEO (optional): [Status or "Not configured"]
 
 === RECOMMENDED NEXT COMMAND ===
-[Recommendation based on state]
+h:focus to see current work pointer, or h:route to proceed
 ```
 
 ## Recommendation Logic
 
-1. If planning contract missing: show block message with templates (do NOT proceed)
-2. If planning contract OK: recommend `h:focus` to see current work pointer
-3. If AI-OPS.md present: remind user it must be read before work
-4. If ready to work: recommend `h:route`
+1. If any gate fails: show specific block message (do NOT proceed)
+2. If AI-OPS.md present: remind user it must be read before work
+3. If all gates pass: recommend `h:focus` or `h:route`
 
 ## Important
 
 - This is READ-ONLY. Do not modify any files.
-- Do not execute GSD commands; only check status.
-- Planning contract is REQUIRED; CLEO is OPTIONAL.
-- If AI-OPS.md exists, emphasize it must be read before proceeding.
+- CLEO is MANDATORY. No routing without CLEO focus.
+- STATE.md Pointer is the work location. CLEO focus is the active task.
+- If .continue-here.md exists, warn user to delete it (deprecated).

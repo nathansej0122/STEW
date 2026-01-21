@@ -14,12 +14,21 @@ The Coordination Overlay Kit ("harness") is a clean-break coordination layer tha
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              PLANNING CONTRACT (REQUIRED)                    │
+│                 CLEO FOCUS (MANDATORY)                       │
 │                                                              │
-│  .planning/STATE.md         Current work pointer + status    │
-│  .planning/.continue-here.md  Resume pointer for sessions    │
+│  External state: ~/.cleo/projects/$PROJECT_KEY/              │
+│  Auto-discovered from git remote or repo basename            │
 │                                                              │
 │  This is Gate 0. ALL harness commands require it.            │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│              PLANNING CONTRACT (REQUIRED)                    │
+│                                                              │
+│  .planning/STATE.md         Pointer line = work location     │
+│                                                              │
+│  This is Gate 1. Commands need valid Pointer to proceed.     │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
@@ -36,37 +45,35 @@ The Coordination Overlay Kit ("harness") is a clean-break coordination layer tha
            ┌───────────────┼───────────────┐
            ▼               ▼               ▼
 ┌─────────────────┐ ┌─────────────┐ ┌─────────────────┐
-│     GSD         │ │     ECC     │ │  CLEO (Optional)│
-│  (Execution)    │ │ (Review)    │ │  (Task Tracking)│
+│     GSD         │ │     ECC     │ │     RALPH       │
+│  (Execution)    │ │ (Review)    │ │  (Autonomous)   │
 └─────────────────┘ └─────────────┘ └─────────────────┘
-           │
-           ▼
-┌─────────────────┐
-│     RALPH       │
-│ (Autonomous)    │
-└─────────────────┘
 ```
 
 ## Authority Split
 
-### Planning Contract: Gate 0 (REQUIRED)
+### CLEO: Task Identity (MANDATORY)
 
-- **Authority**: Work pointer and session continuity
-- **Files**: `.planning/STATE.md` + `.planning/.continue-here.md`
+- **Authority**: Task identity, status, focus
 - **Harness role**: Gate 0 check; all commands block without it
-- **Rule**: Planning contract determines where work resumes
-
-The planning contract is the **only hard gate** for routing. Without it, harness commands fail with explicit instructions.
-
-### CLEO: Task Tracking (OPTIONAL)
-
-- **Authority**: Task identity, status, focus (when configured)
-- **Harness role**: Query only; informational status
 - **Commands**: `cleo focus show`, `cleo list`, `cleo next`
-- **Location**: External to project repo (via `CLEO_PROJECT_DIR`)
-- **Rule**: CLEO is informational; planning contract gates routing
+- **Location**: External to project repo (`~/.cleo/projects/$PROJECT_KEY/`)
+- **Rule**: CLEO focus is the single source of truth for "what is active"
 
-CLEO is optional. If `CLEO_PROJECT_DIR` is not set, harness reports "Not configured" and continues without blocking.
+CLEO is mandatory. If CLEO is not initialized or no focus is set, harness commands hard-fail with explicit instructions.
+
+**Auto-Discovery**: PROJECT_KEY is derived from git remote origin basename (without .git) or repo directory basename. No environment variables required.
+
+### Planning Contract: Gate 1 (REQUIRED)
+
+- **Authority**: Work location (where is the plan)
+- **File**: `.planning/STATE.md` with Pointer line
+- **Harness role**: Gate 1 check; commands block without valid Pointer
+- **Rule**: STATE.md Pointer determines where work files are located
+
+The Pointer line in STATE.md is the single source of truth for "where is the plan."
+
+**Note**: `.planning/.continue-here.md` is deprecated and not part of the contract.
 
 ### GSD: Execution Governance
 
@@ -119,13 +126,14 @@ Most harness commands are read-only:
 ```
 h:status
     │
-    ├─► Gate 0: Check .planning/STATE.md + .continue-here.md (REQUIRED)
+    ├─► Gate 0: Check CLEO focus (MANDATORY)
     │       └─► If missing: BLOCK with explicit instructions
     │
-    ├─► Read planning focus from .continue-here.md
-    ├─► git status --porcelain (read)
-    ├─► check .planning/*.md (read)
-    └─► cleo focus show (OPTIONAL, if CLEO_PROJECT_DIR set)
+    ├─► Gate 1: Check STATE.md Pointer (REQUIRED)
+    │       └─► If missing/placeholder: BLOCK with explicit instructions
+    │
+    ├─► Read git status (read)
+    ├─► Check .planning/*.md (presence only)
     │
     ▼
     Formatted output + recommendation
@@ -191,8 +199,7 @@ your-repo/
 │   ├── ralph.sh           # Copied from native
 │   └── CLAUDE.md          # Copied from native
 ├── .planning/
-│   ├── STATE.md           # REQUIRED - Current work pointer
-│   ├── .continue-here.md  # REQUIRED - Resume pointer for sessions
+│   ├── STATE.md           # REQUIRED - Pointer line = work location
 │   ├── HARNESS_STATE.json # Classification cache (auto-created)
 │   ├── AI-OPS.md          # Optional - Operational constraints
 │   ├── ROADMAP.md         # Optional - Project roadmap
@@ -209,20 +216,24 @@ your-repo/
 └── prd.json               # Temp file during RALPH run
 ```
 
-**Note**: CLEO state is stored externally (via `CLEO_PROJECT_DIR`), NOT in the project repo.
+**Note**: CLEO state is stored externally (`~/.cleo/projects/$PROJECT_KEY/`), NOT in the project repo.
+
+**Note**: `.continue-here.md` is deprecated. If present in a repo, commands will warn to delete it.
 
 ## Comparison with Previous Approaches
 
 ### What Changed
 
-| Aspect | Old Approach | Harness V1 |
+| Aspect | Old Approach | Harness V2 |
 |--------|--------------|------------|
 | Command namespace | Mixed gsd/ct/custom | Unified h:* |
 | GSD integration | Executed GSD inline | Recommend only |
 | Tool vendoring | Copied native code | Reference by path |
 | RALPH safety | Ad-hoc | Shim with gates |
-| State authority | Ambiguous | Planning contract is required gate; CLEO optional |
+| CLEO | Optional | **Mandatory** |
+| State authority | .continue-here.md | CLEO focus + STATE.md Pointer |
 | Classification storage | Various | HARNESS_STATE.json |
+| Env vars | CLEO_PROJECT_DIR required | Auto-discovery, no vars needed |
 
 ### Why Clean Break
 
@@ -230,6 +241,7 @@ your-repo/
 2. **Clear boundaries** - Harness coordinates, natives execute
 3. **Safer RALPH** - Explicit shim with preflight checks
 4. **Maintainable** - Native tools update independently
+5. **Deterministic** - CLEO state location auto-discovered, not configured
 
 ## Safety Model
 
@@ -278,10 +290,11 @@ Plans without this block are classified once automatically using fallback heuris
 
 ### How It Works
 
-1. **Gate 0 always first** - All commands check planning contract before proceeding
-2. **Classification runs once** - `h:_classify` parses explicit block or infers once
-3. **HARNESS_STATE.json stores decisions** - Classification persisted in `.planning/HARNESS_STATE.json`
-4. **Routing reads only** - `h:route` branches on persisted values, never re-reasons
+1. **Gate 0 always first** - All commands check CLEO focus before proceeding
+2. **Gate 1 second** - All commands check STATE.md Pointer
+3. **Classification runs once** - `h:_classify` parses explicit block or infers once
+4. **HARNESS_STATE.json stores decisions** - Classification persisted in `.planning/HARNESS_STATE.json`
+5. **Routing reads only** - `h:route` branches on persisted values, never re-reasons
 
 ### Persisted Object
 
