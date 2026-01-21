@@ -59,13 +59,33 @@ Read the following files (if they exist):
 - `.planning/PROJECT.md` - Project overview
 - `.planning/config.json` - Configuration
 
-## Plan Detection
+## Plan Detection (Phase-Aware)
 
-Check current phase directory for existing plans:
-```bash
-# Look for *-PLAN.md or PLAN.md in current phase dir
-find .planning -name "*-PLAN.md" -o -name "PLAN.md" 2>/dev/null | head -5
+Plan detection MUST be phase-aware. Follow these steps:
+
+### Step 1: Extract Current Phase Directory from STATE.md
+
+Read `.planning/STATE.md` and look for the current phase directory path. Common patterns:
+- `Current Phase: phases/01-foundation/`
+- `Phase Directory: .planning/phases/02-core/`
+- A markdown link or path reference to a phase directory
+
+If STATE.md does not exist or current phase cannot be determined, output:
 ```
+Unable to determine current phase directory from STATE.md.
+Recommend running gsd:progress for phase context.
+```
+And STOP routing (do not guess or search all of .planning).
+
+### Step 2: Count Plans in Current Phase Directory Only
+
+Once you have the phase directory path, check for plans ONLY in that directory:
+```bash
+# Example: if phase dir is .planning/phases/01-foundation/
+ls .planning/phases/01-foundation/*-PLAN.md .planning/phases/01-foundation/PLAN.md 2>/dev/null | wc -l
+```
+
+A plan exists if the count is >= 1.
 
 ## Recent Changes Analysis
 
@@ -92,7 +112,7 @@ State Analysis:
 [Based on state, recommend ONE of:]
   - `gsd:plan-phase` - No plan exists for current phase
   - `gsd:execute-phase` - Plan exists, ready for execution
-  - `gsd:validate-phase` - Execution complete, needs validation
+  - `gsd:verify-work` - Execution complete, needs verification
 
 Reason: [Why this command is recommended]
 

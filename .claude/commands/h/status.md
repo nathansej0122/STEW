@@ -21,8 +21,11 @@ if [ -n "${CLEO_BIN:-}" ]; then
 elif command -v cleo >/dev/null 2>&1; then
   cleo focus show
 else
-  echo "CLEO not found. Set CLEO_BIN env var or add cleo to PATH."
-  echo "Install: https://github.com/your-org/cleo"
+  echo "CLEO not found."
+  echo "Set CLEO_BIN to point to your CLEO install (e.g., ~/tooling/native/cleo/cleo)"
+  echo "Or add cleo to PATH."
+  echo "Repo: https://github.com/kryptobaseddev/cleo"
+  echo "Default native clone path: ~/tooling/native/cleo"
 fi
 ```
 

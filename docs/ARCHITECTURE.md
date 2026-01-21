@@ -50,7 +50,7 @@ The Coordination Overlay Kit ("harness") is a clean-break coordination layer tha
 
 - **Authority**: Planning and execution phases, validation
 - **Harness role**: Recommend GSD commands; never executes them
-- **Commands recommended**: `gsd:plan-phase`, `gsd:execute-phase`, `gsd:validate-phase`
+- **Commands recommended**: `gsd:plan-phase`, `gsd:execute-phase`, `gsd:verify-work`
 - **Rule**: User runs GSD commands manually after h:route recommendation
 
 ### ECC: Code Review Agents

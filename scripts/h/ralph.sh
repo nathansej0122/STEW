@@ -88,19 +88,72 @@ fi
 echo "Bundle found: $BUNDLE_DIR"
 
 # --- Preflight: Clean Working Tree ---
-# Allow only untracked files in the bundle directory
-DIRTY_FILES=$(git status --porcelain | grep -v "^?? $BUNDLE_DIR/" | grep -v "^?? prd.json" | grep -v "^?? progress.txt" | grep -v "^?? scripts/ralph/" || true)
+# Strict validation: iterate each porcelain line and check against allowed patterns.
+# Allowed:
+#   - Untracked (??) files under .planning/ralph/<task_slug>/
+#   - Untracked (??) scripts/ralph/ralph.sh or scripts/ralph/CLAUDE.md
+#   - Untracked (??) prd.json or progress.txt at root
+# NOT allowed:
+#   - Any tracked/modified/staged files
+#   - Untracked files outside allowed paths
 
-if [[ -n "$DIRTY_FILES" ]]; then
-    echo "ERROR: Working tree is not clean."
-    echo "The following files have uncommitted changes:"
-    echo "$DIRTY_FILES"
-    echo ""
-    echo "Commit or stash changes before running RALPH."
+validate_clean_tree() {
+    local has_violations=0
+    local violation_list=""
+
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+
+        local status="${line:0:2}"
+        local filepath="${line:3}"
+
+        # Only untracked files (??) are potentially allowed
+        if [[ "$status" != "??" ]]; then
+            has_violations=1
+            violation_list+="  [MODIFIED/STAGED] $filepath"$'\n'
+            continue
+        fi
+
+        # Check if untracked file is in allowed locations
+        local allowed=0
+
+        # Allow: .planning/ralph/<task_slug>/*
+        if [[ "$filepath" == ".planning/ralph/$TASK_SLUG/"* ]]; then
+            allowed=1
+        fi
+
+        # Allow: scripts/ralph/ralph.sh or scripts/ralph/CLAUDE.md
+        if [[ "$filepath" == "scripts/ralph/ralph.sh" || "$filepath" == "scripts/ralph/CLAUDE.md" ]]; then
+            allowed=1
+        fi
+
+        # Allow: prd.json or progress.txt at root (shim creates these)
+        if [[ "$filepath" == "prd.json" || "$filepath" == "progress.txt" ]]; then
+            allowed=1
+        fi
+
+        if [[ $allowed -eq 0 ]]; then
+            has_violations=1
+            violation_list+="  [UNTRACKED] $filepath"$'\n'
+        fi
+    done < <(git status --porcelain)
+
+    if [[ $has_violations -eq 1 ]]; then
+        echo "ERROR: Working tree is not clean."
+        echo "The following files violate the clean-tree requirement:"
+        echo "$violation_list"
+        echo "Commit, stash, or remove these files before running RALPH."
+        return 1
+    fi
+
+    return 0
+}
+
+if ! validate_clean_tree; then
     exit 1
 fi
 
-echo "Working tree: clean (bundle untracked files allowed)"
+echo "Working tree: clean (allowed untracked files only)"
 
 # --- Preflight: AI-OPS Check ---
 if [[ -f ".planning/AI-OPS.md" ]]; then
@@ -172,15 +225,18 @@ echo "Max iterations: $MAX_ITERS"
 echo "Task slug: $TASK_SLUG"
 echo ""
 
-# Capture stdout and stderr to log file while also displaying
-{
-    ./scripts/ralph/ralph.sh --tool "$TOOL" "$MAX_ITERS" 2>&1 | tee "$BUNDLE_RUNLOG"
-} || {
-    RALPH_EXIT_CODE=$?
+# Capture stdout and stderr to log file (overwrite) while also displaying.
+# Use pipefail to capture the exit code from ralph, not tee.
+set +e
+./scripts/ralph/ralph.sh --tool "$TOOL" "$MAX_ITERS" 2>&1 | tee "$BUNDLE_RUNLOG"
+RALPH_EXIT_CODE="${PIPESTATUS[0]}"
+set -e
+
+if [[ $RALPH_EXIT_CODE -ne 0 ]]; then
     echo ""
-    echo "RALPH exited with code: $RALPH_EXIT_CODE"
+    echo "WARNING: RALPH exited with code: $RALPH_EXIT_CODE"
     echo "Check log: $BUNDLE_RUNLOG"
-}
+fi
 
 # --- Post-Run: Copy Results Back ---
 echo ""
@@ -214,3 +270,6 @@ echo "=== RALPH Run Complete ==="
 echo "Review changes with: git diff"
 echo "Review log with: cat $BUNDLE_RUNLOG"
 echo "Commit when satisfied: git add . && git commit -m 'feat: RALPH task $TASK_SLUG'"
+
+# Propagate RALPH exit code so caller knows if it failed
+exit "$RALPH_EXIT_CODE"

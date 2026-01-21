@@ -6,14 +6,26 @@ This document explains how to install the Coordination Overlay Kit into your rep
 
 The harness coordinates with these native tools (external git clones):
 
-| Tool  | Purpose | Required? |
-|-------|---------|-----------|
-| CLEO  | Task tracking SST | Yes |
-| GSD   | Execution governance | Recommended |
-| ECC   | Code review agents | Recommended |
-| RALPH | Autonomous execution | Optional |
+| Tool  | Purpose | Required? | Repo |
+|-------|---------|-----------|------|
+| CLEO  | Task tracking SST | Yes | [kryptobaseddev/cleo](https://github.com/kryptobaseddev/cleo) |
+| GSD   | Execution governance | Recommended | (internal) |
+| ECC   | Code review agents | Recommended | (internal) |
+| RALPH | Autonomous execution | Optional | (internal) |
 
 These tools should be installed separately. The harness references them but does not vendor their code.
+
+### Expected Native Clone Paths
+
+By convention, native tools are cloned to `~/tooling/native/`:
+
+```
+~/tooling/native/
+├── cleo/           # CLEO task tracker
+├── get-shit-done/  # GSD execution governance
+├── everything-claude-code/  # ECC review agents
+└── ralph/          # RALPH autonomous runner
+```
 
 ## Quick Install
 
@@ -68,7 +80,7 @@ export RALPH_DIR=/path/to/ralph
 
 If not set, the harness uses these defaults:
 
-- `CLEO`: Assumes `cleo` is in PATH
+- `CLEO`: Assumes `cleo` is in PATH; otherwise set `CLEO_BIN` to `~/tooling/native/cleo/cleo` (or wherever installed)
 - `RALPH_BIN`: `~/tooling/native/ralph/ralph.sh`
 - `RALPH_DIR`: `~/tooling/native/ralph`
 - `ECC agents`: `~/tooling/native/everything-claude-code/agents/`
@@ -162,7 +174,10 @@ rm -rf .planning/ralph/
 ERROR: CLEO not available.
 ```
 
-Solution: Set `CLEO_BIN` environment variable or add `cleo` to your PATH.
+Solution:
+1. Clone CLEO from https://github.com/kryptobaseddev/cleo to `~/tooling/native/cleo/`
+2. Run the installer in that repo
+3. Either add `cleo` to your PATH, or set `CLEO_BIN` to point to the binary
 
 ### RALPH not found
 
