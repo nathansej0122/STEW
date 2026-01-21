@@ -42,10 +42,13 @@ YES="${STEW_COMMIT_YES:-0}"
 ALLOW_PLACEHOLDERS="${STEW_COMMIT_ALLOW_PLACEHOLDERS:-0}"
 ALLOW_MAIN="${STEW_COMMIT_ALLOW_MAIN:-0}"
 
-# --- Collect changed files (union of unstaged + staged) ---
+# --- Collect changed files (union of unstaged + staged + untracked) ---
+# Untracked files included so newly created files (e.g., new commands, planning
+# contract files) are visible. --exclude-standard respects .gitignore.
 UNSTAGED=$(git diff --name-only 2>/dev/null)
 STAGED=$(git diff --name-only --cached 2>/dev/null)
-CHANGED_FILES=$(printf '%s\n%s' "$UNSTAGED" "$STAGED" | grep -v '^$' | sort -u)
+UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null)
+CHANGED_FILES=$(printf '%s\n%s\n%s' "$UNSTAGED" "$STAGED" "$UNTRACKED" | grep -v '^$' | sort -u)
 
 if [ -z "$CHANGED_FILES" ]; then
   echo "Nothing to commit"
