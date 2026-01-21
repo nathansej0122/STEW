@@ -85,6 +85,43 @@ if [ -z "$CURRENT_POINTER" ] || echo "$CURRENT_POINTER" | grep -q "^<"; then
   exit 1
 fi
 
+# --- Normalize CURRENT_POINTER (never point to another .continue-here.md) ---
+# If CURRENT_POINTER is a .continue-here.md, resolve to the actual PLAN file
+if echo "$CURRENT_POINTER" | grep -q '\.continue-here\.md$'; then
+  NESTED_DIR=$(dirname "$CURRENT_POINTER")
+  # Try to read nested pointer from the .continue-here.md file
+  if [ -f "$CURRENT_POINTER" ]; then
+    NESTED_POINTER=$(grep -i "^[[:space:]]*Current pointer:" "$CURRENT_POINTER" 2>/dev/null | head -1 | sed 's/^[[:space:]]*[Cc]urrent [Pp]ointer:[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    if [ -n "$NESTED_POINTER" ] && ! echo "$NESTED_POINTER" | grep -q '\.continue-here\.md$'; then
+      CURRENT_POINTER="$NESTED_POINTER"
+    fi
+  fi
+  # If still a .continue-here.md, resolve to PLAN file in that directory
+  if echo "$CURRENT_POINTER" | grep -q '\.continue-here\.md$'; then
+    if [ -f "$NESTED_DIR/PLAN.md" ]; then
+      CURRENT_POINTER="$NESTED_DIR/PLAN.md"
+    else
+      FIRST_PLAN=$(find "$NESTED_DIR" -maxdepth 1 -name "*-PLAN.md" -type f 2>/dev/null | head -1)
+      if [ -n "$FIRST_PLAN" ]; then
+        CURRENT_POINTER="$FIRST_PLAN"
+      fi
+    fi
+  fi
+fi
+
+# If CURRENT_POINTER is a directory, resolve plan file within it
+if [ -d "$CURRENT_POINTER" ]; then
+  DIR_PATH="$CURRENT_POINTER"
+  if [ -f "$DIR_PATH/PLAN.md" ]; then
+    CURRENT_POINTER="$DIR_PATH/PLAN.md"
+  else
+    FIRST_PLAN=$(find "$DIR_PATH" -maxdepth 1 -name "*-PLAN.md" -type f 2>/dev/null | head -1)
+    if [ -n "$FIRST_PLAN" ]; then
+      CURRENT_POINTER="$FIRST_PLAN"
+    fi
+  fi
+fi
+
 # --- Extract WHY from STATE.md ---
 WHY=""
 STATUS_LINE=$(echo "$STATE_CONTENT" | grep -i "^[[:space:]]*Status:" | head -1)
@@ -110,6 +147,11 @@ if [ -z "$NEXT_ACTION" ] || echo "$NEXT_ACTION" | grep -q "^<"; then
 fi
 if [ -z "$NEXT_ACTION" ] || echo "$NEXT_ACTION" | grep -q "^<"; then
   NEXT_ACTION="Continue from current plan file"
+fi
+
+# Normalize NEXT_ACTION: replace tool-specific prefixes with neutral text
+if echo "$NEXT_ACTION" | grep -q '/gsd:'; then
+  NEXT_ACTION="Continue with the current plan execution"
 fi
 
 # --- Overwrite Policy ---
@@ -191,6 +233,13 @@ The command extracts values from STATE.md using these patterns:
    - First `*-PLAN.md` in directory if exists
    - Otherwise the directory itself
 
+**CURRENT_POINTER normalization** (applied after extraction):
+- If path ends with `.continue-here.md`, resolve to actual PLAN file:
+  - Read nested `Current pointer:` from that file if it exists and points to a real file
+  - Otherwise resolve `<dir>/PLAN.md` or first `*-PLAN.md` in that directory
+- If path is a directory, resolve to `PLAN.md` or first `*-PLAN.md` within
+- **Guarantee**: Output never points to a `.continue-here.md` file
+
 **WHY**:
 1. `Status: <text>` - current status line
 2. Fallback: "Derived from STATE.md current phase pointer"
@@ -198,6 +247,7 @@ The command extracts values from STATE.md using these patterns:
 **NEXT_ACTION**:
 1. `Next Action: <text>` (inline or on following line)
 2. Fallback: "Continue from current plan file"
+3. **Normalization**: If contains `/gsd:` prefix, replaced with "Continue with the current plan execution"
 
 ## Overwrite Policy
 
