@@ -1,22 +1,28 @@
 ---
 name: h:route
 description: Coordination router - determine next GSD/ECC action based on state (recommendation only)
-allowed-tools: Read, Grep, Glob, Bash
+allowed-tools: Bash, Skill
 ---
 
 # Harness Route Command
 
-Coordination router. Reads state, recommends actions. **Never executes GSD. Never re-reasons.**
+Coordination router. Reads state, recommends actions. **Never executes GSD. Never re-reasons. Uses persisted classification only.**
 
 ---
 
 ## Gate 1: CLEO Focus
 
 ```bash
-cleo focus show 2>/dev/null || echo "NO_FOCUS"
+FOCUS_OUTPUT=$(cleo focus show 2>/dev/null)
+if [ -z "$FOCUS_OUTPUT" ] || echo "$FOCUS_OUTPUT" | grep -q "No task focused"; then
+    echo "NO_FOCUS"
+else
+    echo "FOCUS_OK"
+    echo "$FOCUS_OUTPUT"
+fi
 ```
 
-If no focus:
+If `NO_FOCUS`:
 ```
 === HARNESS ROUTE - BLOCKED ===
 No CLEO focus set.
@@ -28,9 +34,15 @@ Stop.
 
 ## Gate 2: AI-OPS
 
-Check `.planning/AI-OPS.md` exists.
+```bash
+if [ -f ".planning/AI-OPS.md" ]; then
+    echo "AI_OPS_PRESENT"
+else
+    echo "AI_OPS_MISSING"
+fi
+```
 
-If missing:
+If `AI_OPS_MISSING`:
 ```
 === HARNESS ROUTE - BLOCKED ===
 AI-OPS.md not found.
@@ -43,11 +55,17 @@ Stop.
 ## Gate 3: Phase Directory
 
 ```bash
-grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1
+PHASE_DIR=$(grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
+if [ -z "$PHASE_DIR" ]; then
+    echo "NO_PHASE"
+else
+    echo "PHASE_DIR=$PHASE_DIR"
+fi
 ```
 
-If empty:
+If `NO_PHASE`:
 ```
+=== HARNESS ROUTE - BLOCKED ===
 Unable to determine current phase from STATE.md.
 Recommend: gsd:progress
 ```
@@ -58,40 +76,63 @@ Stop.
 ## Gate 4: Plan Detection
 
 ```bash
-ls ${PHASE_DIR}/*-PLAN.md ${PHASE_DIR}/PLAN.md 2>/dev/null | head -1
+PHASE_DIR=$(grep -oP '(Phase Directory:|Current Phase:)\s*\K.*' .planning/STATE.md 2>/dev/null | head -1)
+PLAN_FILE=$(ls "$PHASE_DIR"/*-PLAN.md "$PHASE_DIR"/PLAN.md 2>/dev/null | sort | head -1)
+if [ -z "$PLAN_FILE" ]; then
+    echo "NO_PLAN"
+else
+    echo "PLAN_FILE=$PLAN_FILE"
+fi
 ```
-
-Store result as `PLAN_FILE`. May be empty.
 
 ---
 
-## Classification (delegated)
+## Classification (if plan exists)
 
-If `PLAN_FILE` exists:
-
-1. Call `h:_classify` internally (ensures classification is stored)
-2. Read classification from CLEO:
+If `PLAN_FILE` exists, call `h:_classify` via Skill tool, then read persisted classification:
 
 ```bash
-FOCUS_ID=$(cleo focus show -q)
-cleo show "$FOCUS_ID" 2>/dev/null | grep -oP '\[WORK_CLASSIFICATION\] \K{[^}]*}'
-```
+FOCUS_ID=$(cleo focus show -q 2>/dev/null)
+TASK_OUTPUT=$(cleo show "$FOCUS_ID" 2>/dev/null)
 
-Parse JSON fields: `automation_fit`, `ecc`, `type`, `scope`
+# Extract and decode base64-encoded classification (last entry wins)
+python3 << 'PYEOF'
+import sys, re, json, base64
+
+text = """$TASK_OUTPUT"""
+matches = re.findall(r'\[WORK_CLASSIFICATION_B64\]\s*([A-Za-z0-9+/=]+)', text)
+if matches:
+    candidate = matches[-1]  # last entry wins
+    try:
+        decoded = base64.b64decode(candidate).decode('utf-8')
+        obj = json.loads(decoded)
+        print(f"TYPE={obj.get('type', 'unknown')}")
+        print(f"SCOPE={obj.get('scope', 'unknown')}")
+        print(f"AUTOMATION_FIT={obj.get('automation_fit', 'unknown')}")
+        print(f"ECC={obj.get('ecc', 'unknown')}")
+        print(f"SOURCE={obj.get('source', 'unknown')}")
+    except:
+        print("CLASSIFICATION_PARSE_ERROR")
+else:
+    print("NO_CLASSIFICATION_FOUND")
+PYEOF
+```
 
 ---
 
-## Output
+## Output Generation
 
-### Header
+Build output strictly from parsed values. No narrative reasoning.
+
+### Header (always shown)
 
 ```
 === HARNESS ROUTE ===
 
-CLEO Focus: [task id and title]
+CLEO Focus: [task id and title from Gate 1]
 AI-OPS: Present
-Phase: [phase name]
-Plan: [Yes/No] [path if yes]
+Phase: [PHASE_DIR value]
+Plan: [Yes/No] [PLAN_FILE path if yes]
 ```
 
 ### If no plan
@@ -101,40 +142,35 @@ Plan: [Yes/No] [path if yes]
 Recommend: gsd:plan-phase
 ```
 
-### If plan exists
+Stop.
+
+### If plan exists (show classification and recommendations)
 
 ```
 === WORK CLASSIFICATION ===
-Type: [type]
-Scope: [scope]
-Automation: [automation_fit]
-ECC: [ecc]
+Type: [TYPE value]
+Scope: [SCOPE value]
+Automation: [AUTOMATION_FIT value]
+ECC: [ECC value]
+Source: [SOURCE value]
 
 === GSD RECOMMENDATION ===
 Recommend: gsd:execute-phase
 ```
 
-Then branch on `automation_fit`:
+### Automation Section (conditional on AUTOMATION_FIT)
 
-#### automation_fit = forbidden
+**If AUTOMATION_FIT = forbidden:**
+Do not print automation section. RALPH commands are invisible.
 
-```
-=== AUTOMATION ===
-RALPH: Not available for this work type
-```
-
-Do not mention h:ralph-init or h:ralph-run.
-
-#### automation_fit = discouraged
-
+**If AUTOMATION_FIT = discouraged:**
 ```
 === AUTOMATION ===
 RALPH: Available with caution
   h:ralph-init [slug] (if bounded subtask identified)
 ```
 
-#### automation_fit = allowed
-
+**If AUTOMATION_FIT = allowed:**
 ```
 === AUTOMATION ===
 RALPH: Recommended
@@ -142,24 +178,21 @@ RALPH: Recommended
   h:ralph-run (after bundle created)
 ```
 
-Then branch on `ecc`:
+### ECC Section (conditional on ECC)
 
-#### ecc = suggested
-
+**If ECC = suggested:**
 ```
 === ECC ===
 Recommend: h:ecc-security-review or h:ecc-code-review
 ```
 
-#### ecc = optional
-
+**If ECC = optional:**
 ```
 === ECC ===
 Optional: h:ecc-code-review
 ```
 
-#### ecc = unnecessary
-
+**If ECC = unnecessary:**
 Do not print ECC section.
 
 ---
@@ -168,6 +201,8 @@ Do not print ECC section.
 
 1. Never execute GSD commands
 2. Never bypass AI-OPS
-3. Never re-classify if classification exists
+3. Never classify inline - always call h:_classify and read persisted result
 4. Never explain classification logic
-5. If automation_fit=forbidden, RALPH commands are invisible
+5. If automation_fit=forbidden, RALPH commands are invisible (omit automation section entirely)
+6. If ecc=unnecessary, omit ECC section entirely
+7. Output values only - no narrative interpretation

@@ -1,0 +1,14 @@
+# CLEO runtime state
+.cleo/
+
+# Local Claude settings
+.claude/settings.local.json
+
+# RALPH runtime artifacts
+scripts/ralph/
+prd.json
+progress.txt
+
+# OS/editor noise
+.DS_Store
+*.swp
