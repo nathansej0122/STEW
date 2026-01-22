@@ -47,7 +47,17 @@ if [ ! -f "$CLEO_STATE_DIR/.cleo/todo.json" ]; then
 fi
 
 CLEO_FOCUS=$( (cd "$CLEO_STATE_DIR" && "$CLEO_CMD" focus show --format json 2>/dev/null) || echo '{}')
-FOCUS_ID=$(echo "$CLEO_FOCUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('id',''))" 2>/dev/null || true)
+
+# Parse CLEO focus JSON (supports multiple schemas: focusedTask, task, focus.currentTask)
+FOCUS_ID=$(echo "$CLEO_FOCUS" | python3 - <<'PYEOF'
+import sys, json
+d = json.load(sys.stdin)
+ft = d.get("focusedTask") or {}
+t = d.get("task") or {}
+f = d.get("focus") or {}
+print(ft.get("id") or t.get("id") or f.get("currentTask") or "")
+PYEOF
+)
 
 if [ -z "$FOCUS_ID" ]; then
   echo "CLEO_FOCUS: NO_FOCUS"

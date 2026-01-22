@@ -47,10 +47,38 @@ fi
 
 # === Gate 2: CLEO Focus ===
 CLEO_FOCUS=$( (cd "$CLEO_STATE_DIR" && "$CLEO_CMD" focus show --format json 2>/dev/null) || echo '{}')
-FOCUS_ID=$(echo "$CLEO_FOCUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('id',''))" 2>/dev/null || true)
-FOCUS_TITLE=$(echo "$CLEO_FOCUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('title',''))" 2>/dev/null || true)
-FOCUS_STATUS=$(echo "$CLEO_FOCUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('status',''))" 2>/dev/null || true)
-FOCUS_DESC=$(echo "$CLEO_FOCUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('task',{}).get('description','')[:200] if d.get('task',{}).get('description') else '')" 2>/dev/null || true)
+
+# Parse CLEO focus JSON (supports multiple schemas: focusedTask, task, focus.currentTask)
+read -r FOCUS_ID FOCUS_TITLE FOCUS_STATUS FOCUS_DESC < <(echo "$CLEO_FOCUS" | python3 - "$CLEO_STATE_DIR" <<'PYEOF'
+import sys, json, os
+cleo_state_dir = sys.argv[1] if len(sys.argv) > 1 else ""
+d = json.load(sys.stdin)
+ft = d.get("focusedTask") or {}
+t = d.get("task") or {}
+f = d.get("focus") or {}
+focus_id = ft.get("id") or t.get("id") or f.get("currentTask") or ""
+focus_title = ft.get("title") or t.get("title") or ""
+focus_status = ft.get("status") or t.get("status") or ""
+focus_desc = (ft.get("description") or t.get("description") or "")[:200]
+# If id exists but title/status missing, resolve from todo.json
+if focus_id and (not focus_title or not focus_status):
+    todo_path = os.path.join(cleo_state_dir, ".cleo", "todo.json")
+    if os.path.isfile(todo_path):
+        try:
+            with open(todo_path) as tf:
+                todo = json.load(tf)
+            for task in todo.get("tasks", []):
+                if task.get("id") == focus_id:
+                    focus_title = focus_title or task.get("title", "")
+                    focus_status = focus_status or task.get("status", "")
+                    focus_desc = focus_desc or (task.get("description") or "")[:200]
+                    break
+        except: pass
+# Output tab-separated for read command (replace tabs/newlines in desc)
+focus_desc_safe = focus_desc.replace('\t', ' ').replace('\n', ' ')
+print(f"{focus_id}\t{focus_title}\t{focus_status}\t{focus_desc_safe}")
+PYEOF
+)
 
 if [ -z "$FOCUS_ID" ]; then
   echo "CLEO_FOCUS: NO_FOCUS"
