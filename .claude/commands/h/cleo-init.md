@@ -62,17 +62,19 @@ else
 fi
 echo "RESULT_INIT: $RESULT_INIT"
 
-# === Ensure Focus is Set ===
-CLEO_FOCUS=$( (cd "$CLEO_STATE_DIR" && "$CLEO_CMD" focus show --format json 2>/dev/null) || echo '{}')
-
-# Parse CLEO focus JSON (supports multiple schemas: focusedTask, task, focus.currentTask)
-FOCUS_ID=$(echo "$CLEO_FOCUS" | python3 - <<'PYEOF'
+# === Ensure Focus is Set (read directly from todo.json) ===
+TODO_FILE="$CLEO_STATE_DIR/.cleo/todo.json"
+FOCUS_ID=$(python3 - "$TODO_FILE" <<'PYEOF'
 import sys, json
-d = json.load(sys.stdin)
-ft = d.get("focusedTask") or {}
-t = d.get("task") or {}
-f = d.get("focus") or {}
-print(ft.get("id") or t.get("id") or f.get("currentTask") or "")
+todo_file = sys.argv[1]
+try:
+    with open(todo_file) as f:
+        d = json.load(f)
+except:
+    print("")
+    sys.exit(0)
+focus = d.get("focus") or {}
+print(focus.get("currentTask") or focus.get("focusedTaskId") or "")
 PYEOF
 )
 
@@ -114,31 +116,24 @@ else
 fi
 echo "RESULT_FOCUS: $RESULT_FOCUS"
 
-# === Get Final Focus Info ===
-CLEO_FOCUS=$( (cd "$CLEO_STATE_DIR" && "$CLEO_CMD" focus show --format json 2>/dev/null) || echo '{}')
-
-# Parse CLEO focus JSON (supports multiple schemas: focusedTask, task, focus.currentTask)
-read -r FOCUS_ID FOCUS_TITLE < <(echo "$CLEO_FOCUS" | python3 - "$CLEO_STATE_DIR" <<'PYEOF'
-import sys, json, os
-cleo_state_dir = sys.argv[1] if len(sys.argv) > 1 else ""
-d = json.load(sys.stdin)
-ft = d.get("focusedTask") or {}
-t = d.get("task") or {}
-f = d.get("focus") or {}
-focus_id = ft.get("id") or t.get("id") or f.get("currentTask") or ""
-focus_title = ft.get("title") or t.get("title") or ""
-# If id exists but title missing, resolve from todo.json
-if focus_id and not focus_title:
-    todo_path = os.path.join(cleo_state_dir, ".cleo", "todo.json")
-    if os.path.isfile(todo_path):
-        try:
-            with open(todo_path) as tf:
-                todo = json.load(tf)
-            for task in todo.get("tasks", []):
-                if task.get("id") == focus_id:
-                    focus_title = task.get("title", "")
-                    break
-        except: pass
+# === Get Final Focus Info (read directly from todo.json) ===
+read -r FOCUS_ID FOCUS_TITLE < <(python3 - "$TODO_FILE" <<'PYEOF'
+import sys, json
+todo_file = sys.argv[1]
+try:
+    with open(todo_file) as f:
+        d = json.load(f)
+except:
+    print("\t")
+    sys.exit(0)
+focus = d.get("focus") or {}
+focus_id = focus.get("currentTask") or focus.get("focusedTaskId") or ""
+focus_title = ""
+if focus_id:
+    for task in d.get("tasks", []):
+        if task.get("id") == focus_id:
+            focus_title = task.get("title", "")
+            break
 print(f"{focus_id}\t{focus_title}")
 PYEOF
 )

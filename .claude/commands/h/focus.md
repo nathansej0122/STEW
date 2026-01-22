@@ -45,36 +45,30 @@ if [ ! -f "$CLEO_STATE_DIR/.cleo/todo.json" ]; then
   exit 1
 fi
 
-# === Gate 2: CLEO Focus ===
-CLEO_FOCUS=$( (cd "$CLEO_STATE_DIR" && "$CLEO_CMD" focus show --format json 2>/dev/null) || echo '{}')
-
-# Parse CLEO focus JSON (supports multiple schemas: focusedTask, task, focus.currentTask)
-read -r FOCUS_ID FOCUS_TITLE FOCUS_STATUS FOCUS_DESC < <(echo "$CLEO_FOCUS" | python3 - "$CLEO_STATE_DIR" <<'PYEOF'
-import sys, json, os
-cleo_state_dir = sys.argv[1] if len(sys.argv) > 1 else ""
-d = json.load(sys.stdin)
-ft = d.get("focusedTask") or {}
-t = d.get("task") or {}
-f = d.get("focus") or {}
-focus_id = ft.get("id") or t.get("id") or f.get("currentTask") or ""
-focus_title = ft.get("title") or t.get("title") or ""
-focus_status = ft.get("status") or t.get("status") or ""
-focus_desc = (ft.get("description") or t.get("description") or "")[:200]
-# If id exists but title/status missing, resolve from todo.json
-if focus_id and (not focus_title or not focus_status):
-    todo_path = os.path.join(cleo_state_dir, ".cleo", "todo.json")
-    if os.path.isfile(todo_path):
-        try:
-            with open(todo_path) as tf:
-                todo = json.load(tf)
-            for task in todo.get("tasks", []):
-                if task.get("id") == focus_id:
-                    focus_title = focus_title or task.get("title", "")
-                    focus_status = focus_status or task.get("status", "")
-                    focus_desc = focus_desc or (task.get("description") or "")[:200]
-                    break
-        except: pass
-# Output tab-separated for read command (replace tabs/newlines in desc)
+# === Gate 2: CLEO Focus (read directly from todo.json) ===
+TODO_FILE="$CLEO_STATE_DIR/.cleo/todo.json"
+read -r FOCUS_ID FOCUS_TITLE FOCUS_STATUS FOCUS_DESC < <(python3 - "$TODO_FILE" <<'PYEOF'
+import sys, json
+todo_file = sys.argv[1]
+try:
+    with open(todo_file) as f:
+        d = json.load(f)
+except:
+    print("\t\t\t")
+    sys.exit(0)
+focus = d.get("focus") or {}
+focus_id = focus.get("currentTask") or focus.get("focusedTaskId") or ""
+focus_title = ""
+focus_status = ""
+focus_desc = ""
+if focus_id:
+    for task in d.get("tasks", []):
+        if task.get("id") == focus_id:
+            focus_title = task.get("title", "")
+            focus_status = task.get("status", "")
+            focus_desc = (task.get("description") or "")[:200]
+            break
+# Replace tabs/newlines in desc for safe output
 focus_desc_safe = focus_desc.replace('\t', ' ').replace('\n', ' ')
 print(f"{focus_id}\t{focus_title}\t{focus_status}\t{focus_desc_safe}")
 PYEOF
