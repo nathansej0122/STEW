@@ -50,7 +50,7 @@ echo "CLEO_INIT: OK"
 
 # === Gate 2: CLEO Focus (read directly from todo.json) ===
 TODO_FILE="$CLEO_STATE_DIR/.cleo/todo.json"
-read -r FOCUS_ID FOCUS_TITLE FOCUS_STATUS < <(python3 - "$TODO_FILE" <<'PYEOF'
+IFS=$'\t' read -r FOCUS_ID FOCUS_TITLE FOCUS_STATUS < <(python3 - "$TODO_FILE" <<'PYEOF'
 import sys, json
 todo_file = sys.argv[1]
 try:
@@ -66,8 +66,8 @@ focus_status = ""
 if focus_id:
     for task in d.get("tasks", []):
         if task.get("id") == focus_id:
-            focus_title = task.get("title", "")
-            focus_status = task.get("status", "")
+            focus_title = task.get("title", "").replace('\t', ' ').replace('\n', ' ')
+            focus_status = task.get("status", "").replace('\t', ' ').replace('\n', ' ')
             break
 print(f"{focus_id}\t{focus_title}\t{focus_status}")
 PYEOF

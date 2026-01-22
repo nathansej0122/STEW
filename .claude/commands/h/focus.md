@@ -47,7 +47,7 @@ fi
 
 # === Gate 2: CLEO Focus (read directly from todo.json) ===
 TODO_FILE="$CLEO_STATE_DIR/.cleo/todo.json"
-read -r FOCUS_ID FOCUS_TITLE FOCUS_STATUS FOCUS_DESC < <(python3 - "$TODO_FILE" <<'PYEOF'
+IFS=$'\t' read -r FOCUS_ID FOCUS_TITLE FOCUS_STATUS FOCUS_DESC < <(python3 - "$TODO_FILE" <<'PYEOF'
 import sys, json
 todo_file = sys.argv[1]
 try:
@@ -64,13 +64,11 @@ focus_desc = ""
 if focus_id:
     for task in d.get("tasks", []):
         if task.get("id") == focus_id:
-            focus_title = task.get("title", "")
-            focus_status = task.get("status", "")
-            focus_desc = (task.get("description") or "")[:200]
+            focus_title = task.get("title", "").replace('\t', ' ').replace('\n', ' ')
+            focus_status = task.get("status", "").replace('\t', ' ').replace('\n', ' ')
+            focus_desc = (task.get("description") or "")[:200].replace('\t', ' ').replace('\n', ' ')
             break
-# Replace tabs/newlines in desc for safe output
-focus_desc_safe = focus_desc.replace('\t', ' ').replace('\n', ' ')
-print(f"{focus_id}\t{focus_title}\t{focus_status}\t{focus_desc_safe}")
+print(f"{focus_id}\t{focus_title}\t{focus_status}\t{focus_desc}")
 PYEOF
 )
 
