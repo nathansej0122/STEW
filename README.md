@@ -51,7 +51,7 @@ STEW is intentionally strict.
 
 **Planning contract**: STATE.md is required (provides work location via Pointer line).
 
-CLEO is mandatory. Commands hard-fail without CLEO focus.
+CLEO is mandatory. Commands hard-fail without CLEO focus. Run `h:cleo-init` to bootstrap.
 
 For commits, use `h:commit` with explicit mode-based staging (never `git add .`).
 
@@ -76,6 +76,8 @@ This turns expensive, repeated reasoning into cheap, persistent state.
 
 ```
 User
+  ↓
+h:cleo-init (bootstrap: initialize CLEO if needed)
   ↓
 CLEO (focus: what task is active) [MANDATORY]
   ↓

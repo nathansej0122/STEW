@@ -58,6 +58,57 @@ CLEO_STATE_DIR: ~/.cleo/projects/my-app
 
 ---
 
+## h:cleo-init
+
+### Purpose
+
+**Bootstrap command** that automatically initializes CLEO for the current repository.
+
+This is the canonical first step when CLEO blocks occur.
+
+### What it does
+
+1. Derives PROJECT_KEY from git remote or repo basename
+2. Creates CLEO state directory (`~/.cleo/projects/$PROJECT_KEY/`)
+3. Runs `cleo init` if not already initialized
+4. Creates an initial task (title derived from repo name + STATE.md pointer if present)
+5. Sets focus to the created task
+
+### What it requires
+
+- CLEO binary on PATH (or `CLEO_BIN` set)
+
+### What it does *not* require
+
+- No flags
+- No environment variables
+- No manual directory creation
+
+### When to use
+
+Run `h:cleo-init` when any harness command blocks with:
+- `CLEO_INIT: NOT_INITIALIZED`
+- `CLEO_FOCUS: NO_FOCUS`
+
+### Idempotent
+
+Safe to run multiple times. If CLEO is already initialized and focused, reports current state without changes.
+
+### Output
+
+```
+PROJECT_KEY: my-app
+CLEO_STATE_DIR: ~/.cleo/projects/my-app
+
+RESULT_INIT: Initialized | Already initialized
+RESULT_FOCUS: Focus set | Focus already set
+
+=== CLEO INITIALIZED ===
+FOCUS: T001 - Work on my-app
+```
+
+---
+
 ## h:status
 
 ### Purpose
@@ -85,33 +136,15 @@ Displays the **current coordination state** across all tools.
 
 ### Blocked Outputs
 
-If CLEO not initialized:
+If CLEO not initialized or no focus set:
 ```
 === HARNESS STATUS - BLOCKED ===
 
 CLEO not initialized for this project.
 
-Project Key: my-app
-CLEO State Dir: ~/.cleo/projects/my-app
+Run: h:cleo-init
 
-To initialize:
-  mkdir -p "~/.cleo/projects/my-app"
-  (cd "~/.cleo/projects/my-app" && cleo init)
-
-Then set focus:
-  (cd "~/.cleo/projects/my-app" && cleo add "Initial task" && cleo focus set T001)
-```
-
-If no CLEO focus:
-```
-=== HARNESS STATUS - BLOCKED ===
-
-No CLEO focus set.
-
-CLEO focus is mandatory for STEW routing.
-
-Set focus:
-  (cd "~/.cleo/projects/my-app" && cleo focus set <task-id>)
+This will automatically initialize CLEO and set focus.
 ```
 
 If STATE.md Pointer missing:
