@@ -153,12 +153,9 @@ CLEO not initialized for this project.
 
 CLEO State Dir: [CLEO_STATE_DIR]
 
-To initialize:
-  mkdir -p "[CLEO_STATE_DIR]"
-  (cd "[CLEO_STATE_DIR]" && cleo init)
+Run: h:cleo-init
 
-Then set focus:
-  (cd "[CLEO_STATE_DIR]" && cleo add "Initial task" && cleo focus set T001)
+This will automatically initialize CLEO and set focus.
 ```
 
 **If `CLEO_FOCUS: NO_FOCUS`** - Show block message and stop:
@@ -170,8 +167,9 @@ No CLEO focus set.
 
 CLEO focus is mandatory for STEW routing.
 
-Set focus:
-  (cd "[CLEO_STATE_DIR]" && cleo focus set <task-id>)
+Run: h:cleo-init
+
+This will automatically create a task and set focus.
 ```
 
 **If `STATE_MD: MISSING`** - Show block message and stop:
