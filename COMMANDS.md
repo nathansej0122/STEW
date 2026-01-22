@@ -58,13 +58,70 @@ CLEO_STATE_DIR: ~/.cleo/projects/my-app
 
 ---
 
+## h:init
+
+### Purpose
+
+**The canonical first step.** One-command bootstrap for the entire coordination stack.
+
+Run `h:init` when any harness command blocks. It handles everything.
+
+### What it does
+
+1. Derives PROJECT_KEY from git remote or repo basename
+2. Creates CLEO state directory (`~/.cleo/projects/$PROJECT_KEY/`)
+3. Runs `cleo init` if not already initialized
+4. Creates an initial task and sets focus (if needed)
+5. Normalizes STATE.md Pointer (if STATE.md exists)
+
+### What it requires
+
+- CLEO binary on PATH (or `CLEO_BIN` set)
+
+### What it does *not* require
+
+- No flags
+- No environment variables
+- No manual directory creation
+- No separate commands for different fixes
+
+### When to use
+
+Run `h:init` when any harness command blocks with:
+- `CLEO_INIT: NOT_INITIALIZED`
+- `CLEO_FOCUS: NO_FOCUS`
+- `STATE_POINTER: MISSING_OR_PLACEHOLDER`
+
+### Idempotent
+
+Safe to run multiple times. Reports current state without changes if already configured.
+
+### Output
+
+```
+PROJECT_KEY: my-app
+CLEO_STATE_DIR: ~/.cleo/projects/my-app
+
+INIT_CLEO: Initialized | Already initialized
+INIT_FOCUS: Set | Already set
+INIT_STATE_POINTER: Updated | Already compliant | Manual fix required
+
+NEXT: Run h:status
+```
+
+### Graceful Degradation
+
+If STATE.md does not exist, CLEO still initializes and focus is still set. The command will warn about missing STATE.md and recommend creating it.
+
+---
+
 ## h:cleo-init
 
 ### Purpose
 
-**Bootstrap command** that automatically initializes CLEO for the current repository.
+**CLEO-only bootstrap command.** Initializes CLEO for the current repository.
 
-This is the canonical first step when CLEO blocks occur.
+**Prefer `h:init` instead** - it does everything `h:cleo-init` does plus STATE.md normalization.
 
 ### What it does
 
@@ -86,9 +143,7 @@ This is the canonical first step when CLEO blocks occur.
 
 ### When to use
 
-Run `h:cleo-init` when any harness command blocks with:
-- `CLEO_INIT: NOT_INITIALIZED`
-- `CLEO_FOCUS: NO_FOCUS`
+**Prefer `h:init` instead.** Use `h:cleo-init` only if you want CLEO initialization without STATE.md normalization.
 
 ### Idempotent
 
@@ -105,6 +160,47 @@ RESULT_FOCUS: Focus set | Focus already set
 
 === CLEO INITIALIZED ===
 FOCUS: T001 - Work on my-app
+```
+
+---
+
+## h:state-normalize
+
+### Purpose
+
+**STATE.md normalization command.** Ensures STATE.md has a valid `Pointer:` line.
+
+**Prefer `h:init` instead** - it does everything `h:state-normalize` does plus CLEO initialization.
+
+### What it does
+
+1. Checks if `.planning/STATE.md` exists (blocks if missing)
+2. Checks if a valid `Pointer:` line already exists (compliant)
+3. If not, derives Pointer from legacy STATE.md formats:
+   - `Resume file:` line (handles `.continue-here.md` references)
+   - `Phase Directory:` line
+   - `Current Phase:` line
+4. Updates STATE.md with the derived Pointer
+
+### What it requires
+
+- `.planning/STATE.md` must exist
+
+### When to use
+
+**Prefer `h:init` instead.** Use `h:state-normalize` only if you want STATE.md normalization without CLEO initialization.
+
+### Idempotent
+
+Safe to run multiple times. If Pointer already valid, reports "Already compliant" without changes.
+
+### Output
+
+```
+DERIVATION_SOURCE: Resume file | Phase Directory | Current Phase
+DERIVED_POINTER: .planning/phases/phase-1/PLAN.md
+
+RESULT: Updated | Already compliant | Blocked
 ```
 
 ---
@@ -142,9 +238,9 @@ If CLEO not initialized or no focus set:
 
 CLEO not initialized for this project.
 
-Run: h:cleo-init
+Run: h:init
 
-This will automatically initialize CLEO and set focus.
+This will automatically initialize CLEO, set focus, and normalize STATE.md.
 ```
 
 If STATE.md Pointer missing:
@@ -153,7 +249,9 @@ If STATE.md Pointer missing:
 
 STATE.md Pointer is missing or contains placeholder.
 
-Edit .planning/STATE.md and set the Pointer line to a real path.
+Run: h:init
+
+This will attempt to derive Pointer from legacy STATE.md formats.
 ```
 
 ---
@@ -561,12 +659,9 @@ CLEO not initialized for this project.
 Project Key: test-project
 CLEO State Dir: ~/.cleo/projects/test-project
 
-To initialize:
-  mkdir -p "~/.cleo/projects/test-project"
-  (cd "~/.cleo/projects/test-project" && cleo init)
+Run: h:init
 
-Then set focus:
-  (cd "~/.cleo/projects/test-project" && cleo add "Initial task" && cleo focus set T001)
+This will automatically initialize CLEO, set focus, and normalize STATE.md.
 ```
 
 ### Scenario 2: No CLEO focus
@@ -586,8 +681,9 @@ No CLEO focus set.
 
 CLEO focus is mandatory for STEW routing.
 
-Set focus:
-  (cd "~/.cleo/projects/test-project" && cleo focus set <task-id>)
+Run: h:init
+
+This will automatically create a task and set focus.
 ```
 
 ### Scenario 3: STATE.md Pointer missing
@@ -603,7 +699,10 @@ h:status
 
 STATE.md Pointer is missing or contains placeholder.
 
-Edit .planning/STATE.md and set the Pointer line to a real path.
+Run: h:init
+
+This will attempt to derive Pointer from legacy STATE.md formats.
+If derivation fails, manual edit of .planning/STATE.md is required.
 ```
 
 ### Scenario 4: .continue-here.md exists (deprecated)

@@ -153,9 +153,9 @@ CLEO not initialized for this project.
 
 CLEO State Dir: [CLEO_STATE_DIR]
 
-Run: h:cleo-init
+Run: h:init
 
-This will automatically initialize CLEO and set focus.
+This will automatically initialize CLEO, set focus, and normalize STATE.md.
 ```
 
 **If `CLEO_FOCUS: NO_FOCUS`** - Show block message and stop:
@@ -167,7 +167,7 @@ No CLEO focus set.
 
 CLEO focus is mandatory for STEW routing.
 
-Run: h:cleo-init
+Run: h:init
 
 This will automatically create a task and set focus.
 ```
@@ -196,7 +196,10 @@ Next Action:
 
 STATE.md Pointer is missing or contains placeholder.
 
-Edit .planning/STATE.md and set the Pointer line to a real path.
+Run: h:init
+
+This will attempt to derive Pointer from legacy STATE.md formats.
+If derivation fails, manual edit of .planning/STATE.md is required.
 ```
 
 **If `AI_OPS: Present`** - Remind user it must be read before work (do NOT block).
