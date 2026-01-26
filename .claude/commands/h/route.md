@@ -259,7 +259,7 @@ Delete it: rm .planning/.continue-here.md
 ```
 === RECOMMENDATION ===
 No plan file found. Create a plan document in the phase directory.
-Recommend: Create PLAN.md or use gsd:plan-phase
+Recommend: Create PLAN.md using gsd:plan-phase
 ```
 
 Stop.
@@ -275,7 +275,9 @@ ECC: [ECC value]
 Source: [SOURCE value]
 
 === RECOMMENDATION ===
-Recommend: Execute the plan (gsd:execute-phase or manual execution)
+Recommend: h:execute
+
+This will propose the GSD execution and require explicit approval.
 ```
 
 ### Automation Section (conditional on AUTOMATION_FIT)
@@ -319,7 +321,7 @@ Do not print ECC section.
 
 ## Rules
 
-1. Never execute GSD commands
+1. Never execute GSD commands directly - always recommend h:execute
 2. CLEO focus is MANDATORY; STATE.md Pointer is REQUIRED
 3. Never classify inline - always call h:_classify and read persisted result
 4. Never explain classification logic
@@ -327,3 +329,4 @@ Do not print ECC section.
 6. If ecc=unnecessary, omit ECC section entirely
 7. Output values only - no narrative interpretation
 8. If .continue-here.md exists, warn user to delete it (deprecated)
+9. h:execute is the only path to GSD execution - users never run /gsd directly
