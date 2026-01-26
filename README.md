@@ -44,10 +44,12 @@ STEW is intentionally strict.
 | Tool | Status | What it owns |
 |---|---|---|
 | **CLEO** | **MANDATORY** | Task identity (focus) |
-| **GSD (Get Shit Done)** | Required | Plans, phases, execution order |
+| **GSD (Get Shit Done)** | Internal executor | Plans, phases, execution order |
 | **ECC** | Optional | Review agents (code, security, refactor, docs) |
 | **RALPH** | Optional | Bounded mechanical automation |
-| **STEW** | Required | Routing & governance |
+| **STEW** | User interface | Routing, governance, dispatch |
+
+**You run only `h:*` commands.** GSD is an internal executor invoked via `h:execute`.
 
 **Planning contract**: STATE.md is required (provides work location via Pointer line).
 
@@ -83,13 +85,17 @@ CLEO (focus: what task is active) [MANDATORY]
   ↓
 STATE.md (pointer: where is the plan)
   ↓
-GSD (plans: what should happen)
+h:route (reads everything, classifies work)
   ↓
-h:route (reads everything)
-  ├─ recommends gsd:* commands
-  ├─ may suggest h:ralph-* (only if allowed)
-  └─ may suggest h:ecc-* (only if useful)
+h:execute (proposes execution, requires APPROVE)
+  ↓
+GSD (internal executor: builds what the plan specifies)
+  ↓
+h:ecc-* (optional: review if useful)
+h:ralph-* (optional: automation if allowed)
 ```
+
+**The approval gate:** `h:execute` never runs GSD silently. You must reply `APPROVE` then run it again.
 
 ---
 

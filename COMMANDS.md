@@ -32,8 +32,11 @@ If a command would cause side effects, it will say so explicitly.
 | Where is work located? | STATE.md Pointer |
 | What should happen? | GSD plans |
 | What is allowed? | Governance rules |
+| How to execute? | h:execute (dispatches to GSD) |
 
 CLEO focus is **mandatory**. STATE.md Pointer is **required**.
+
+**Important:** You run only `h:*` commands. GSD is an internal executor invoked via `h:execute`.
 
 ---
 
@@ -311,6 +314,121 @@ It determines the **single next allowed action** based on current state.
 - inspectable
 
 If `h:route` output changes, state has changed.
+
+---
+
+## h:execute
+
+### Purpose
+
+**The GSD dispatch entrypoint.** Executes plans via GSD with explicit approval gating.
+
+This is the only way to invoke GSD. Users never run `/gsd` commands directly.
+
+### Two-Step Handshake
+
+This command requires explicit user approval:
+
+1. **Step 1 (Proposal):** Run `h:execute` - outputs proposed execution and asks for approval
+2. **Step 2 (Execution):** User replies exactly `APPROVE`, then runs `h:execute` again
+
+This prevents silent execution and ensures explicit user consent.
+
+### What it does
+
+1. Verifies all prerequisites (CLEO, STATE.md, plan, classification)
+2. Resolves the plan file from STATE.md Pointer
+3. Extracts phase number from path (if standard convention)
+4. Outputs proposed execution command
+5. Waits for `APPROVE`
+6. On approval, invokes GSD skill
+
+### Gates (all required)
+
+- CLEO binary available
+- CLEO initialized
+- CLEO focus set
+- STATE.md exists with valid Pointer
+- Plan file exists
+- Classification exists (from h:route)
+
+### Phase Number Detection
+
+The phase number is extracted from the plan file path:
+
+| Path Pattern | Detected Phase |
+|--------------|----------------|
+| `.planning/phases/01-setup/PLAN.md` | 01 |
+| `.planning/phases/02-core/PLAN.md` | 02 |
+| `.planning/phases/10-polish/PLAN.md` | 10 |
+| `.planning/my-plan/PLAN.md` | NONE (blocked) |
+
+If no phase number is detected, `h:execute` blocks and explains manual execution is required.
+
+### Output (Step 1 - Proposal)
+
+```
+=== PROPOSED EXECUTION ===
+
+CLEO Focus: T001 - Work on feature
+Plan File: .planning/phases/01-setup/PLAN.md
+Phase Number: 01
+
+Proposed Command: gsd:execute-plan 01
+
+=== APPROVAL REQUIRED ===
+
+Reply exactly: APPROVE
+
+Then run h:execute again to proceed.
+```
+
+### Output (Step 2 - Execution)
+
+After user replies `APPROVE` and runs `h:execute` again:
+
+```
+=== EXECUTING ===
+
+Invoking: gsd:execute-plan 01
+```
+
+Then GSD executes the plan.
+
+### Blocked Outputs
+
+**If classification missing:**
+```
+=== HARNESS EXECUTE - BLOCKED ===
+
+No classification found.
+
+Run: h:route
+
+This will classify the work and persist the result.
+Then run h:execute again.
+```
+
+**If phase number not detected:**
+```
+=== PROPOSED EXECUTION - BLOCKED ===
+
+The plan file path does not follow the standard phase numbering convention.
+
+STEW cannot automatically dispatch to GSD without a phase number.
+
+Manual execution required or restructure the plan directory.
+```
+
+### When to use
+
+After `h:route` recommends execution and classification exists.
+
+### What it never does
+
+- Execute GSD without explicit `APPROVE`
+- Auto-classify (requires h:route first)
+- Guess phase numbers
 
 ---
 
@@ -723,3 +841,110 @@ This file is not part of the STEW contract. Delete it:
 - [ ] `h:focus` has same hard-fail behavior
 - [ ] `h:route` has same hard-fail behavior
 - [ ] All commands warn if .continue-here.md exists
+
+---
+
+## Regression: Dispatch
+
+These scenarios verify `h:execute` dispatch behavior.
+
+### Case A: All prerequisites met
+
+**Setup:**
+- CLEO focus set
+- STATE.md Pointer valid
+- Plan file exists at `.planning/phases/01-setup/PLAN.md`
+- Classification exists in HARNESS_STATE.json
+
+**Run:** `h:execute`
+
+**Expected output (Step 1):**
+```
+=== PROPOSED EXECUTION ===
+
+CLEO Focus: T001 - Work on feature
+Plan File: .planning/phases/01-setup/PLAN.md
+Phase Number: 01
+
+Proposed Command: gsd:execute-plan 01
+
+=== APPROVAL REQUIRED ===
+
+Reply exactly: APPROVE
+
+Then run h:execute again to proceed.
+```
+
+**Then:** User replies `APPROVE`, runs `h:execute` again.
+
+**Expected output (Step 2):**
+```
+=== EXECUTING ===
+
+Invoking: gsd:execute-plan 01
+```
+
+GSD skill is invoked.
+
+### Case B: No classification
+
+**Setup:**
+- CLEO focus set
+- STATE.md Pointer valid
+- Plan file exists
+- No `.planning/HARNESS_STATE.json`
+
+**Run:** `h:execute`
+
+**Expected output:**
+```
+CLASSIFICATION: MISSING
+HARNESS_STATE_JSON: NOT_FOUND
+
+=== HARNESS EXECUTE - BLOCKED ===
+
+No classification found.
+
+Run: h:route
+
+This will classify the work and persist the result.
+Then run h:execute again.
+```
+
+### Case C: Plan path not in NN-phase format
+
+**Setup:**
+- CLEO focus set
+- STATE.md Pointer points to `.planning/my-custom-plan/PLAN.md`
+- Classification exists
+
+**Run:** `h:execute`
+
+**Expected output:**
+```
+PHASE_NUM: NONE
+
+=== PROPOSED EXECUTION - BLOCKED ===
+
+CLEO Focus: T001 - Work on feature
+Plan File: .planning/my-custom-plan/PLAN.md
+Phase Number: Not detectable (path does not match .planning/phases/NN-*/...)
+
+The plan file path does not follow the standard phase numbering convention.
+
+STEW cannot automatically dispatch to GSD without a phase number.
+
+=== MANUAL EXECUTION REQUIRED ===
+
+Run the GSD command manually or restructure the plan directory.
+```
+
+No GSD skill is invoked.
+
+### Dispatch Verification Checklist
+
+- [ ] `h:execute` proposes and requires APPROVE when all prerequisites met
+- [ ] `h:execute` blocks and points to h:route when classification missing
+- [ ] `h:execute` blocks and explains when plan path has no phase number
+- [ ] `h:execute` never executes GSD without explicit APPROVE
+- [ ] `h:route` recommends `h:execute` (not gsd directly)
